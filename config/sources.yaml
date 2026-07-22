@@ -1,0 +1,9 @@
+rss:
+  - nome: Agencia Brasil
+    url: https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml
+  - nome: G1
+    url: https://g1.globo.com/rss/g1/
+google:
+  enabled: true
+instagram:
+  enabled: false

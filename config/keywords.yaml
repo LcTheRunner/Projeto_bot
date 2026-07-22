@@ -1,0 +1,53 @@
+editorias:
+  politica: [politica, congresso, camara, senado, governo, vereador, deputado]
+  economia: [economia, inflacao, emprego, investimento, mercado]
+  negocios: [negocios, empresa, investimento, patrocinio]
+  terceiro_setor: [terceiro setor, ONG, ONGs, organizacao social, O.S., OS]
+  empreendedorismo: [empreendedorismo, empreendedor, startup]
+monitorados:
+  - movimento cultural
+  - vilas olimpicas
+  - social
+  - MCS
+  - O.S.
+  - organizacao social
+  - ONGs
+  - Instituto Carioca
+  - esporte e lazer
+  - emendas parlamentares
+  - editais publicos
+  - empresas que investem em ONG
+  - empresas que investem no meio ambiente
+  - empresas que investem em esporte
+  - Lei Rouanet
+  - lei de incentivo ao esporte
+  - Prefeitura de Marica
+  - Marica e esporte
+hashtags_instagram: [ong, terceirosetor, movimentosocial, esporteelazer, leirouanet, marica]
+regras:
+  risco_10:
+    peso: 10
+    palavras: [corrupcao, desvio, fraude, prisao, preso, operacao policial, policia federal investiga, lavagem de dinheiro, politico corrupto]
+  risco_5:
+    peso: 5
+    palavras: [suspeita, denuncia, investigacao, irregularidade, questionado, crise]
+  tendencia_negativa:
+    peso: 0
+    polaridade: negativa
+    palavras: [critica, atraso, polemica, contestacao]
+  positiva_10:
+    peso: 10
+    polaridade: positiva
+    palavras: [premio, reconhecido, referencia, excelencia, impacto positivo]
+  boa_5:
+    peso: 5
+    polaridade: positiva
+    palavras: [edital aberto, oportunidade, parceria, investimento social, patrocinio]
+  tendencia_positiva:
+    peso: 0
+    polaridade: positiva
+    palavras: [avanco, perspectiva, dialogo, proposta]
+desambiguacao:
+  OS:
+    exigir_um_de: [contrato, gestao, prefeitura, secretaria, chamamento, convenio, saude, cultura, esporte]
+    excluir: [Android, iOS, Linux, Windows, software, sistema operacional]

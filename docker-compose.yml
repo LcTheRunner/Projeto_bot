@@ -1,0 +1,30 @@
+services:
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: media_monitor
+      MARIADB_USER: media
+      MARIADB_PASSWORD: media
+      MARIADB_ROOT_PASSWORD: change-me
+    volumes: ["mariadb_data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    build: .
+    env_file: .env
+    ports: ["8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+    volumes: ["./config:/app/config:ro"]
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker"]
+    env_file: .env
+    depends_on:
+      db: {condition: service_healthy}
+    volumes: ["./config:/app/config:ro"]
+volumes:
+  mariadb_data:
