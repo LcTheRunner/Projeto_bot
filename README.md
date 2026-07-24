@@ -8,11 +8,16 @@ MVP em Python para coletar notícias, encontrar temas monitorados, classificar r
 2. Preencha `GOOGLE_API_KEY` e `GOOGLE_CSE_ID` para habilitar Google Programmable Search.
 3. Execute `docker compose up --build`.
 4. Abra `http://localhost:8000/docs`.
-5. Inicie uma coleta em `POST /coletas` ou aguarde a rotina diária das 04h30.
+5. Abra o painel gerencial em `http://localhost:4200`.
+6. Inicie uma coleta em `POST /coletas` ou aguarde a rotina diária das 04h30.
 
 O relatório sai às 07h00 quando SMTP estiver preenchido. Também pode ser disparado por `POST /relatorios/enviar`. Para Instagram, informe conta profissional/token Meta e ative `instagram.enabled` em `config/sources.yaml`.
 
 Consultas principais: `GET /noticias?risco=10` e `GET /estatisticas/semana?termo=corrupção com O.S.`.
+
+## Painel gerencial
+
+O frontend Angular fica em `dashboard-web` e consulta a API analítica Java/Spring Boot em `dashboard-api`. O painel mostra KPIs, evolução temporal, distribuição de risco e tom, menções por palavra-chave, veículos e detalhes das notícias. Os filtros consultam o MariaDB em tempo real. Google e Instagram aparecerão nos mesmos componentes quando as credenciais forem ativadas.
 
 ## Como funciona
 

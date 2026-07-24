@@ -7,3 +7,11 @@ __pycache__
 .git
 .coverage
 htmlcov
+dashboard-web/node_modules
+dashboard-web/dist
+dashboard-web/.angular
+dashboard-api/target
+dashboard-preview.png
+dashboard-preview-dark.png
+cloudflared.exe
+*.log

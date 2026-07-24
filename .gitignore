@@ -5,3 +5,8 @@ __pycache__/
 .venv/
 htmlcov/
 .coverage
+dashboard-preview.png
+dashboard-preview-dark.png
+cloudflared.exe
+cloudflared-tunnel.*.log
+localhost-run.*.log

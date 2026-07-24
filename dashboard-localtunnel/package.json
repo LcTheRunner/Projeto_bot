@@ -1,0 +1,8 @@
+{
+  "name": "dashboard-localtunnel",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "localtunnel": "2.0.2"
+  }
+}

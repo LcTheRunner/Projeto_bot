@@ -1,0 +1,80 @@
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">M</span><div><strong>Mídia Radar</strong><small>Inteligência reputacional</small></div></div>
+    <nav>
+      <a class="active"><span>▦</span> Visão geral</a>
+      <a href="#keywords"><span>⌕</span> Palavras-chave</a>
+      <a href="#sources"><span>◎</span> Veículos</a>
+      <a href="#articles"><span>≡</span> Notícias</a>
+    </nav>
+    <div class="side-status">
+      <p>SISTEMA</p>
+      <div><i class="online"></i><span>Coletor ativo<small>RSS e páginas web</small></span></div>
+      <div><i [class.online]="(data()?.kpis?.instagram ?? 0) > 0" class="pending"></i><span>Instagram<small>Aguardando credenciais</small></span></div>
+      <div><i class="pending"></i><span>Google Search<small>Aguardando credenciais</small></span></div>
+    </div>
+    <div class="sidebar-footer"><span>v1.0</span><span>Monitoramento diário</span></div>
+  </aside>
+
+  <main>
+    <header>
+      <div><p class="eyebrow">CENTRAL DE MONITORAMENTO</p><h1>Panorama de impacto midiático</h1><p>Acompanhe menções, riscos e alcance editorial em uma única visão.</p></div>
+      <div class="header-actions"><span class="updated"><i></i> Atualizado {{ lastUpdate() }}</span><button class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button></div>
+    </header>
+
+    <section class="filters">
+      <label><span>Período</span><select [(ngModel)]="days" (change)="load()"><option [ngValue]="7">Últimos 7 dias</option><option [ngValue]="30">Últimos 30 dias</option><option [ngValue]="90">Últimos 90 dias</option></select></label>
+      <label><span>Palavra-chave</span><select [(ngModel)]="keyword" (change)="load()"><option value="">Todas as palavras</option><option *ngFor="let item of filters().keywords" [value]="item">{{ item }}</option></select></label>
+      <label><span>Veículo</span><select [(ngModel)]="source" (change)="load()"><option value="">Todos os veículos</option><option *ngFor="let item of filters().sources" [value]="item">{{ item }}</option></select></label>
+      <label><span>Risco</span><select [(ngModel)]="risk" (change)="load()"><option value="">Todos os riscos</option><option value="10">Risco 10</option><option value="5">Risco 5</option><option value="0">Risco 0</option></select></label>
+      <label><span>Tom</span><select [(ngModel)]="tone" (change)="load()"><option value="">Todos os tons</option><option *ngFor="let item of filters().tones" [value]="item">{{ toneLabel(item) }}</option></select></label>
+      <button class="clear" (click)="clear()">Limpar filtros</button>
+    </section>
+
+    <div *ngIf="loading()" class="state"><span class="spinner"></span> Atualizando indicadores…</div>
+    <div *ngIf="error()" class="state error">{{ error() }}</div>
+
+    <ng-container *ngIf="data() as dashboard">
+      <section class="kpis">
+        <article><div class="icon violet">▤</div><div><small>MENÇÕES COLETADAS</small><strong>{{ dashboard.kpis.articles }}</strong><span>No período selecionado</span></div></article>
+        <article><div class="icon blue">◎</div><div><small>VEÍCULOS DISTINTOS</small><strong>{{ dashboard.kpis.sources }}</strong><span>Fontes monitoradas</span></div></article>
+        <article class="danger-card"><div class="icon red">!</div><div><small>ALERTAS CRÍTICOS</small><strong>{{ dashboard.kpis.risk10 }}</strong><span>Classificação risco 10</span></div></article>
+        <article class="impact-card" [ngClass]="impactClass(dashboard.kpis.averageImpact)"><div class="icon amber">↗</div><div class="impact-content"><small>IMPACTO MIDIÁTICO MÉDIO <span class="info" title="Combina risco, quantidade de palavras-chave encontradas e relevância da fonte.">i</span></small><strong>{{ dashboard.kpis.averageImpact | number:'1.1-2' }} <em>/ 10</em></strong><div class="impact-scale"><i [style.width.%]="dashboard.kpis.averageImpact * 10"></i></div><span>{{ impactLabel(dashboard.kpis.averageImpact) }}</span></div></article>
+      </section>
+
+      <section class="grid two">
+        <article class="panel timeline-panel">
+          <div class="panel-head"><div><p>EVOLUÇÃO</p><h2>Menções ao longo do tempo</h2></div><span>{{ dashboard.kpis.articles }} registros</span></div>
+          <div class="timeline">
+            <div *ngFor="let point of dashboard.timeline" class="timeline-column" [title]="point.value + ' menções'">
+              <b>{{ point.value }}</b><div class="timeline-bar" [style.height.%]="width(point, dashboard.timeline)"></div><small>{{ day(point.label) }}</small>
+            </div>
+          </div>
+        </article>
+        <article class="panel risk-panel">
+          <div class="panel-head"><div><p>CLASSIFICAÇÃO</p><h2>Risco e tom das notícias</h2></div></div>
+          <h3 class="classification-title">CLASSIFICAÇÃO DE RISCO</h3>
+          <div class="risk-list"><div *ngFor="let point of dashboard.byRisk"><span class="risk-dot" [class]="point.label.includes('10') ? 'risk-dot critical-bg' : point.label.includes('5') ? 'risk-dot attention-bg' : 'risk-dot neutral-bg'"></span><strong>{{ point.label }}</strong><div class="meter"><i [style.width.%]="width(point, dashboard.byRisk)"></i></div><b>{{ point.value }}</b></div></div>
+          <h3 class="classification-title tone-title">TOM DAS NOTÍCIAS</h3>
+          <div class="tone-list"><div *ngFor="let point of dashboard.byTone"><span class="tone-dot"></span><strong>{{ point.label }}</strong><div class="meter tone-meter"><i [style.width.%]="width(point, dashboard.byTone)"></i></div><b>{{ point.value }}</b></div></div>
+        </article>
+      </section>
+
+      <section class="grid two" id="keywords">
+        <article class="panel">
+          <div class="panel-head"><div><p>TERMOS MONITORADOS</p><h2>Menções por palavra-chave</h2></div><span>Top 20</span></div>
+          <div class="bars"><div *ngFor="let point of dashboard.byKeyword"><div class="bar-label"><span>{{ point.label }}</span><b>{{ point.value }}</b></div><div class="bar-track"><i [style.width.%]="width(point, dashboard.byKeyword)"></i></div></div><p *ngIf="!dashboard.byKeyword.length" class="empty">Nenhuma palavra encontrada neste filtro.</p></div>
+        </article>
+        <article class="panel" id="sources">
+          <div class="panel-head"><div><p>COBERTURA</p><h2>Notícias por veículo</h2></div><span>{{ dashboard.kpis.sources }} fontes</span></div>
+          <div class="source-list"><div *ngFor="let point of dashboard.bySource"><div class="source-icon">{{ point.label.charAt(0) }}</div><div><strong>{{ point.label }}</strong><span>{{ sourceType(point.label) }}</span></div><div class="mini-track"><i [style.width.%]="width(point, dashboard.bySource)"></i></div><b>{{ point.value }}</b></div></div>
+        </article>
+      </section>
+
+      <section class="panel articles" id="articles">
+        <div class="panel-head"><div><p>CONTEÚDO COLETADO</p><h2>Notícias e evidências</h2></div><label class="search">⌕ <input [(ngModel)]="search" placeholder="Buscar nesta tabela"></label></div>
+        <div class="table-wrap"><table><thead><tr><th>Notícia</th><th>Veículo</th><th>Editoria</th><th>Risco</th><th>Impacto</th><th>Publicação</th></tr></thead><tbody><tr *ngFor="let article of visibleArticles()"><td><a [href]="article.url" target="_blank" rel="noopener">{{ article.title }}</a><div class="tags"><span *ngFor="let word of article.keywords.slice(0, 3)">{{ word }}</span></div></td><td><strong>{{ article.source }}</strong><small>{{ article.journalist || 'Autor não identificado' }}</small></td><td>{{ toneLabel(article.section) }}</td><td><span class="risk-badge" [ngClass]="riskClass(article.risk)">{{ article.risk }}</span><small>{{ toneLabel(article.tone) }}</small></td><td><b>{{ article.impact | number:'1.1-1' }}</b></td><td>{{ date(article.publishedAt) }}</td></tr></tbody></table></div>
+      </section>
+    </ng-container>
+  </main>
+</div>

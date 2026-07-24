@@ -1,0 +1,17 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: media-monitor-dashboard
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mariadb://db:3306/media_monitor}
+    username: ${SPRING_DATASOURCE_USERNAME:media}
+    password: ${SPRING_DATASOURCE_PASSWORD:media}
+    driver-class-name: org.mariadb.jdbc.Driver
+  jackson:
+    default-property-inclusion: non_null
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

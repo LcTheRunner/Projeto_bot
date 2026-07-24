@@ -1,0 +1,17 @@
+services:
+  share-tunnel:
+    build: ./dashboard-tunnel
+    image: cadu-tunnel:local
+    container_name: cadu-share-tunnel
+    command:
+      - ssh
+      - -p
+      - "443"
+      - -R0:host.docker.internal:4200
+      - -o
+      - StrictHostKeyChecking=no
+      - -o
+      - UserKnownHostsFile=/dev/null
+      - -o
+      - ServerAliveInterval=30
+      - a.pinggy.io
