@@ -33,9 +33,19 @@ google_news:
     - '"Lei Rouanet" OR "Lei Rounet" OR "lei de incentivo ao esporte"'
     - 'Maricá (prefeitura OR esporte OR lazer OR edital)'
 
-# A JSON API permanece desativada porque a chave atual recebeu 403 do Google.
+# Busca complementar pela Google Programmable Search API.
 google:
+  # Ative após liberar a Custom Search JSON API no projeto da chave.
   enabled: false
+  queries:
+    - '"Instituto Carioca"'
+    - '"esporte e lazer" (edital OR incentivo OR investimento OR "projeto social")'
+    - 'corrupção OR "político corrupto" OR "políticos corruptos"'
+    - '"emenda parlamentar" OR "emendas parlamentares"'
+    - '(edital OR "chamamento público") (ONG OR esporte OR cultura OR "meio ambiente" OR "terceiro setor")'
+    - '(empresa OR empresas) (investimento OR patrocínio) (ONG OR "meio ambiente" OR esporte)'
+    - '"Lei Rouanet" OR "Lei Rounet" OR "lei de incentivo ao esporte"'
+    - 'Maricá (prefeitura OR esporte OR lazer OR edital)'
 
 instagram:
   enabled: false

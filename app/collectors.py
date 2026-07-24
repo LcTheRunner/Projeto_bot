@@ -65,7 +65,20 @@ def google_news_items() -> list[dict]:
 def google_items(query: str) -> list[dict]:
     cfg = settings()
     if not cfg.google_api_key or not cfg.google_cse_id: return []
-    response = httpx.get("https://customsearch.googleapis.com/customsearch/v1", params={"key": cfg.google_api_key, "cx": cfg.google_cse_id, "q": query, "dateRestrict": "d7"}, timeout=30).raise_for_status().json()
+    try:
+        response = httpx.get(
+            "https://customsearch.googleapis.com/customsearch/v1",
+            params={"key": cfg.google_api_key, "cx": cfg.google_cse_id, "q": query, "dateRestrict": "d7"},
+            timeout=30,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Falha na Google Custom Search: HTTP %s", exc.response.status_code)
+        return []
+    except httpx.HTTPError as exc:
+        logger.warning("Falha na Google Custom Search: %s", type(exc).__name__)
+        return []
+    response = response.json()
     return [{"title": x["title"], "url": x["link"], "body": x.get("snippet", ""), "source": urlparse(x["link"]).netloc, "published_at": datetime.now(timezone.utc), "_source_weight": 1.0} for x in response.get("items", [])]
 
 def instagram_items(hashtag: str) -> list[dict]:
