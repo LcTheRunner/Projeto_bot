@@ -1,9 +1,41 @@
 rss:
-  - nome: Agencia Brasil
+  - nome: Agência Brasil
     url: https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml
+    peso: 1.2
   - nome: G1
     url: https://g1.globo.com/rss/g1/
-google:
+    peso: 1.1
+  - nome: CNN Brasil
+    url: https://www.cnnbrasil.com.br/feed/
+    peso: 1.1
+  - nome: Poder360
+    url: https://www.poder360.com.br/feed/
+    peso: 1.1
+  - nome: Metrópoles
+    url: https://www.metropoles.com/feed
+    peso: 1.0
+  - nome: Senado Notícias
+    url: https://www12.senado.leg.br/noticias/feed/todasnoticias/RSS
+    peso: 1.2
+
+# Busca temática gratuita via RSS. Não usa GOOGLE_API_KEY.
+google_news:
   enabled: true
+  peso: 1.0
+  horas: 72
+  queries:
+    - '"Instituto Carioca"'
+    - '"esporte e lazer" (edital OR incentivo OR investimento OR "projeto social")'
+    - 'corrupção OR "político corrupto" OR "políticos corruptos"'
+    - '"emenda parlamentar" OR "emendas parlamentares"'
+    - '(edital OR "chamamento público") (ONG OR esporte OR cultura OR "meio ambiente" OR "terceiro setor")'
+    - '(empresa OR empresas) (investimento OR patrocínio) (ONG OR "meio ambiente" OR esporte)'
+    - '"Lei Rouanet" OR "Lei Rounet" OR "lei de incentivo ao esporte"'
+    - 'Maricá (prefeitura OR esporte OR lazer OR edital)'
+
+# A JSON API permanece desativada porque a chave atual recebeu 403 do Google.
+google:
+  enabled: false
+
 instagram:
   enabled: false

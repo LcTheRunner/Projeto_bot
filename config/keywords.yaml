@@ -1,53 +1,81 @@
 editorias:
-  politica: [politica, congresso, camara, senado, governo, vereador, deputado]
-  economia: [economia, inflacao, emprego, investimento, mercado]
-  negocios: [negocios, empresa, investimento, patrocinio]
-  terceiro_setor: [terceiro setor, ONG, ONGs, organizacao social, O.S., OS]
-  empreendedorismo: [empreendedorismo, empreendedor, startup]
+  marica_esporte: [Maricá, Prefeitura de Maricá]
+  instituto_carioca: [Instituto Carioca]
+  integridade_corrupcao: [corrupção, corrupto, fraude, desvio, lavagem de dinheiro, operação policial]
+  emendas_parlamentares: [emenda parlamentar, emendas parlamentares, orçamento secreto]
+  editais_oportunidades: [edital, editais, chamamento público, chamada pública, seleção pública, inscrições abertas]
+  cultura_incentivo: [Lei Rouanet, Lei Rounet, PRONAC, SALIC, incentivo à cultura]
+  investimento_social_ambiental: [investimento social, patrocínio, ONG, terceiro setor, meio ambiente, ambiental, sustentabilidade]
+  esporte_lazer: [esporte, esportivo, esporte e lazer, incentivo ao esporte, projeto esportivo, formação esportiva]
+
+# Termos que, sozinhos, tornam uma notícia relevante.
 monitorados:
-  - movimento cultural
-  - vilas olimpicas
-  - social
-  - MCS
-  - O.S.
-  - organizacao social
-  - ONGs
   - Instituto Carioca
   - esporte e lazer
+  - corrupção
+  - emenda parlamentar
   - emendas parlamentares
-  - editais publicos
+  - político corrupto
+  - políticos corruptos
+  - empresa que investe em ONG
   - empresas que investem em ONG
+  - empresa que investe no meio ambiente
   - empresas que investem no meio ambiente
+  - empresa que investe em esporte
   - empresas que investem em esporte
   - Lei Rouanet
+  - Lei Rounet
   - lei de incentivo ao esporte
-  - Prefeitura de Marica
-  - Marica e esporte
-hashtags_instagram: [ong, terceirosetor, movimentosocial, esporteelazer, leirouanet, marica]
+  - Prefeitura de Maricá
+
+# Combinações evitam ruído como placares de futebol e editais de compras sem
+# relação com esporte, cultura, terceiro setor ou meio ambiente.
+combinacoes_monitoradas:
+  - nome: editais_relacionados
+    termos: [edital, editais, chamamento público, chamada pública, seleção pública]
+    contexto: [esporte, esportivo, lazer, cultura, ONG, ONGs, organização social, terceiro setor, meio ambiente, ambiental, sustentabilidade, Lei Rouanet, incentivo, projeto social, Maricá]
+  - nome: investimento_empresarial
+    termos: [investimento, investe, investem, patrocínio, patrocina, patrocinam]
+    contexto: [ONG, ONGs, meio ambiente, ambiental, sustentabilidade, esporte, esportivo, projeto social, terceiro setor]
+  - nome: marica_esporte
+    termos: [Maricá]
+    contexto: [esporte, esportivo, lazer, edital, incentivo, projeto social]
+  - nome: esporte_social
+    termos: [esporte, esportivo, lazer]
+    contexto: [edital, incentivo, investimento, patrocínio, ONG, organização social, projeto social, inclusão, lei]
+  - nome: politico_corrupcao
+    termos: [político, políticos, deputado, senador, vereador, prefeito]
+    contexto: [corrupção, corrupto, corruptos, fraude, desvio, lavagem de dinheiro]
+
+hashtags_instagram: [ong, terceirosetor, esporteelazer, leirouanet, marica, incentivoaoesporte]
+
 regras:
   risco_10:
     peso: 10
-    palavras: [corrupcao, desvio, fraude, prisao, preso, operacao policial, policia federal investiga, lavagem de dinheiro, politico corrupto]
+    palavras: [corrupção, político corrupto, políticos corruptos, desvio, fraude, prisão, preso, operação policial, polícia federal investiga, lavagem de dinheiro]
+  risco_7:
+    peso: 7
+    palavras: [investigação, investigado, denúncia, denunciado, superfaturamento, propina, organização criminosa]
   risco_5:
     peso: 5
-    palavras: [suspeita, denuncia, investigacao, irregularidade, questionado, crise]
+    palavras: [suspeita, irregularidade, questionado, crise, falta de transparência, rejeição de contas]
   tendencia_negativa:
     peso: 0
     polaridade: negativa
-    palavras: [critica, atraso, polemica, contestacao]
-  positiva_10:
+    palavras: [crítica, atraso, polêmica, contestação, suspenso, cancelado]
+  oportunidade_10:
     peso: 10
     polaridade: positiva
-    palavras: [premio, reconhecido, referencia, excelencia, impacto positivo]
-  boa_5:
+    palavras: [edital aberto, inscrições abertas, chamamento público, chamada pública, seleção pública]
+  oportunidade_7:
+    peso: 7
+    polaridade: positiva
+    palavras: [Lei Rouanet, lei de incentivo ao esporte, patrocínio, investimento social, incentivo fiscal, emenda parlamentar]
+  positiva_5:
     peso: 5
     polaridade: positiva
-    palavras: [edital aberto, oportunidade, parceria, investimento social, patrocinio]
+    palavras: [parceria, investimento, projeto aprovado, resultado final, premiação, reconhecimento]
   tendencia_positiva:
     peso: 0
     polaridade: positiva
-    palavras: [avanco, perspectiva, dialogo, proposta]
-desambiguacao:
-  OS:
-    exigir_um_de: [contrato, gestao, prefeitura, secretaria, chamamento, convenio, saude, cultura, esporte]
-    excluir: [Android, iOS, Linux, Windows, software, sistema operacional]
+    palavras: [avanço, perspectiva, diálogo, proposta, oportunidade]
