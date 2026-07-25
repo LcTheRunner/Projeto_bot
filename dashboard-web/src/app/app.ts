@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ReportOverview, ReportPdfService, ReportSections } from './report-pdf.service';
 
 interface Point { label: string; value: number; }
 interface Article {
@@ -25,11 +26,15 @@ interface Filters { sources: string[]; sections: string[]; risks: number[]; keyw
 })
 export class App implements OnInit {
   private readonly http = inject(HttpClient);
+  private readonly reportPdf = inject(ReportPdfService);
   readonly data = signal<Overview | null>(null);
   readonly filters = signal<Filters>({ sources: [], sections: [], risks: [0, 5, 10], keywords: [], tones: [] });
   readonly loading = signal(true);
   readonly error = signal('');
   readonly lastUpdate = computed(() => this.data()?.generatedAt ? this.date(this.data()!.generatedAt) : '—');
+  readonly reportOpen = signal(false);
+  readonly reportGenerating = signal(false);
+  readonly reportError = signal('');
 
   days = 7;
   keyword = '';
@@ -37,6 +42,14 @@ export class App implements OnInit {
   risk = '';
   tone = '';
   search = '';
+  reportSections: ReportSections = {
+    summary: true,
+    distributions: true,
+    relevant: true,
+    critical: true,
+    journalists: true,
+    allNews: false
+  };
 
   ngOnInit(): void {
     this.http.get<Filters>('/dashboard-api/filters').subscribe({ next: value => this.filters.set(value) });
@@ -46,14 +59,52 @@ export class App implements OnInit {
   load(): void {
     this.loading.set(true);
     this.error.set('');
-    let params = new HttpParams().set('days', this.days);
-    if (this.keyword) params = params.set('keyword', this.keyword);
-    if (this.source) params = params.set('source', this.source);
-    if (this.risk !== '') params = params.set('risk', this.risk);
-    if (this.tone) params = params.set('tone', this.tone);
+    const params = this.params();
     this.http.get<Overview>('/dashboard-api/overview', { params }).subscribe({
       next: value => { this.data.set(value); this.loading.set(false); },
       error: () => { this.error.set('Não foi possível carregar os dados. Tente novamente.'); this.loading.set(false); }
+    });
+  }
+
+  openReport(): void {
+    this.reportError.set('');
+    this.reportOpen.set(true);
+  }
+
+  closeReport(): void {
+    if (!this.reportGenerating()) this.reportOpen.set(false);
+  }
+
+  selectedReportSections(): number {
+    return Object.values(this.reportSections).filter(Boolean).length;
+  }
+
+  generateReport(): void {
+    if (!this.selectedReportSections()) {
+      this.reportError.set('Selecione pelo menos uma seção para o relatório.');
+      return;
+    }
+    this.reportGenerating.set(true);
+    this.reportError.set('');
+    const params = this.params().set('includeAll', true);
+    this.http.get<ReportOverview>('/dashboard-api/overview', { params }).subscribe({
+      next: async value => {
+        try {
+          await this.reportPdf.generate(value, this.reportSections, {
+            periodLabel: `Últimos ${this.days} dias`,
+            filters: this.activeFilterLabels()
+          });
+          this.reportOpen.set(false);
+        } catch {
+          this.reportError.set('Não foi possível montar o PDF. Tente novamente.');
+        } finally {
+          this.reportGenerating.set(false);
+        }
+      },
+      error: () => {
+        this.reportError.set('Não foi possível carregar os dados completos do relatório.');
+        this.reportGenerating.set(false);
+      }
     });
   }
 
@@ -71,5 +122,23 @@ export class App implements OnInit {
     const term = this.search.trim().toLocaleLowerCase('pt-BR');
     if (!term) return this.data()?.articles ?? [];
     return (this.data()?.articles ?? []).filter(a => [a.title, a.source, a.journalist, ...a.keywords].some(value => value?.toLocaleLowerCase('pt-BR').includes(term)));
+  }
+
+  private params(): HttpParams {
+    let params = new HttpParams().set('days', this.days);
+    if (this.keyword) params = params.set('keyword', this.keyword);
+    if (this.source) params = params.set('source', this.source);
+    if (this.risk !== '') params = params.set('risk', this.risk);
+    if (this.tone) params = params.set('tone', this.tone);
+    return params;
+  }
+
+  private activeFilterLabels(): string[] {
+    const labels: string[] = [];
+    if (this.keyword) labels.push(`Palavra-chave: ${this.keyword}`);
+    if (this.source) labels.push(`Veículo: ${this.source}`);
+    if (this.risk !== '') labels.push(`Risco: ${this.risk}`);
+    if (this.tone) labels.push(`Tom: ${this.toneLabel(this.tone)}`);
+    return labels;
   }
 }

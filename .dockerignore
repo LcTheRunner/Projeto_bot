@@ -14,4 +14,7 @@ dashboard-api/target
 dashboard-preview.png
 dashboard-preview-dark.png
 cloudflared.exe
+Microsoft.WSL_*.msixbundle
+CORRIGIR_WSL_COMO_ADMIN.cmd
+repair-*.ps1
 *.log

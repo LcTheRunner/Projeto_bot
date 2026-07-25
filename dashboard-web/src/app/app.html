@@ -19,8 +19,31 @@
   <main>
     <header>
       <div><p class="eyebrow">CENTRAL DE MONITORAMENTO</p><h1>Panorama de impacto midiático</h1><p>Acompanhe menções, riscos e alcance editorial em uma única visão.</p></div>
-      <div class="header-actions"><span class="updated"><i></i> Atualizado {{ lastUpdate() }}</span><button class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button></div>
+      <div class="header-actions"><span class="updated"><i></i> Atualizado {{ lastUpdate() }}</span><button class="report-button" (click)="openReport()" [disabled]="loading()">PDF Relatório</button><button class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button></div>
     </header>
+
+    <div class="modal-backdrop" *ngIf="reportOpen()" (click)="closeReport()">
+      <section class="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title" (click)="$event.stopPropagation()">
+        <div class="report-modal-head">
+          <div><p class="eyebrow">EXPORTAÇÃO PERSONALIZADA</p><h2 id="report-title">Emitir relatório em PDF</h2><span>O PDF respeitará o período e os filtros atuais do dashboard.</span></div>
+          <button class="modal-close" (click)="closeReport()" aria-label="Fechar">×</button>
+        </div>
+        <div class="report-options">
+          <label><input type="checkbox" [(ngModel)]="reportSections.summary"><span><strong>Resumo executivo</strong><small>KPIs, volume, fontes, riscos e impacto médio.</small></span></label>
+          <label><input type="checkbox" [(ngModel)]="reportSections.distributions"><span><strong>Distribuições e cobertura</strong><small>Risco, editorias, veículos e palavras-chave.</small></span></label>
+          <label><input type="checkbox" [(ngModel)]="reportSections.relevant"><span><strong>Notícias relevantes</strong><small>Impacto igual ou superior a 4 ou com risco identificado.</small></span></label>
+          <label><input type="checkbox" [(ngModel)]="reportSections.critical"><span><strong>Notícias de risco crítico</strong><small>Relação completa das notícias classificadas como risco 10.</small></span></label>
+          <label><input type="checkbox" [(ngModel)]="reportSections.journalists"><span><strong>Análise de jornalistas</strong><small>Produção, alertas críticos e impacto médio por responsável.</small></span></label>
+          <label><input type="checkbox" [(ngModel)]="reportSections.allNews"><span><strong>Todas as notícias</strong><small>Relação integral do período, sem o limite de 100 itens da tela.</small></span></label>
+        </div>
+        <p class="report-error" *ngIf="reportError()">{{ reportError() }}</p>
+        <div class="report-modal-actions">
+          <span>{{ selectedReportSections() }} seções selecionadas</span>
+          <button class="cancel-report" (click)="closeReport()" [disabled]="reportGenerating()">Cancelar</button>
+          <button class="generate-report" (click)="generateReport()" [disabled]="reportGenerating() || !selectedReportSections()">{{ reportGenerating() ? 'Gerando PDF…' : 'Baixar PDF' }}</button>
+        </div>
+      </section>
+    </div>
 
     <section class="filters">
       <label><span>Período</span><select [(ngModel)]="days" (change)="load()"><option [ngValue]="7">Últimos 7 dias</option><option [ngValue]="30">Últimos 30 dias</option><option [ngValue]="90">Últimos 90 dias</option></select></label>

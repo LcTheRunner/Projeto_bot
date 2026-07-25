@@ -36,7 +36,7 @@ public class DashboardService {
         return result;
     }
 
-    public Map<String, Object> overview(int days, String keyword, String source, Integer risk, String tone) {
+    public Map<String, Object> overview(int days, String keyword, String source, Integer risk, String tone, boolean includeAll) {
         LocalDateTime since = LocalDateTime.now().minusDays(days);
         List<ArticleRow> rows = jdbc.query("""
                 SELECT a.id, a.title, a.url, a.source, a.section, a.journalist, a.published_at,
@@ -73,7 +73,7 @@ public class DashboardService {
         result.put("bySection", count(rows, r -> label(r.section)));
         result.put("byKeyword", keywordCount(rows));
         result.put("timeline", timeline(rows, days));
-        result.put("articles", rows.stream().limit(100).map(ArticleRow::toMap).toList());
+        result.put("articles", (includeAll ? rows.stream() : rows.stream().limit(100)).map(ArticleRow::toMap).toList());
         return result;
     }
 

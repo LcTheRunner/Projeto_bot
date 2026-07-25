@@ -24,6 +24,10 @@ describe('App', () => {
     fixture.detectChanges();
     expect(fixture.componentInstance).toBeTruthy();
     expect((fixture.nativeElement as HTMLElement).querySelector('h1')?.textContent).toContain('Panorama de impacto midiático');
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.report-button')?.click();
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('#report-title')?.textContent).toContain('Emitir relatório em PDF');
+    expect((fixture.nativeElement as HTMLElement).querySelectorAll('.report-options input').length).toBe(6);
     http.verify();
   });
 });

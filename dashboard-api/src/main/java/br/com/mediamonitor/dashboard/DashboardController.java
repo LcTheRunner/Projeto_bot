@@ -21,8 +21,9 @@ public class DashboardController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String source,
             @RequestParam(required = false) Integer risk,
-            @RequestParam(required = false) String tone) {
-        return service.overview(Math.max(1, Math.min(days, 365)), keyword, source, risk, tone);
+            @RequestParam(required = false) String tone,
+            @RequestParam(defaultValue = "false") boolean includeAll) {
+        return service.overview(Math.max(1, Math.min(days, 365)), keyword, source, risk, tone, includeAll);
     }
 
     @GetMapping("/filters")
