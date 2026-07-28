@@ -1,8 +1,8 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ReportOverview, ReportPdfService, ReportSections } from './report-pdf.service';
+import { ReportOverview, ReportPdfService } from './report-pdf.service';
 
 interface Point { label: string; value: number; }
 interface Article {
@@ -20,6 +20,7 @@ interface Filters { sources: string[]; sections: string[]; risks: number[]; keyw
 interface CurrentUser { id: number; username: string; displayName: string; email?: string; admin: boolean; }
 interface UserKeyword { id: number; keyword: string; }
 interface ManagedUser { id: number; username: string; displayName: string; email?: string; admin: boolean; active: boolean; }
+type DashboardPage = 'overview' | 'keywords' | 'sources' | 'news';
 
 @Component({
   selector: 'app-root',
@@ -27,7 +28,7 @@ interface ManagedUser { id: number; username: string; displayName: string; email
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
-export class App implements OnInit {
+export class App implements OnInit, OnDestroy {
   private readonly http = inject(HttpClient);
   private readonly reportPdf = inject(ReportPdfService);
   readonly data = signal<Overview | null>(null);
@@ -43,7 +44,7 @@ export class App implements OnInit {
   readonly loginError = signal('');
   readonly authMode = signal<'login' | 'register' | 'verify' | 'forgot' | 'reset'>('login');
   readonly authMessage = signal('');
-  readonly keywordOpen = signal(false);
+  readonly page = signal<DashboardPage>('overview');
   readonly userKeywords = signal<UserKeyword[]>([]);
   readonly keywordError = signal('');
   readonly keywordMessage = signal('');
@@ -51,6 +52,7 @@ export class App implements OnInit {
   readonly accountsOpen = signal(false);
   readonly managedUsers = signal<ManagedUser[]>([]);
   readonly accountError = signal('');
+  private readonly popStateHandler = () => this.activatePage(this.pageFromPath(), false);
 
   days = 7;
   keyword = '';
@@ -77,22 +79,20 @@ export class App implements OnInit {
   accountEmail = '';
   accountPassword = '';
   accountAdmin = false;
-  reportSections: ReportSections = {
-    summary: true,
-    distributions: true,
-    relevant: true,
-    critical: true,
-    journalists: true,
-    allNews: false
-  };
 
   ngOnInit(): void {
+    this.activatePage(this.pageFromPath(), false);
+    window.addEventListener('popstate', this.popStateHandler);
     this.resetToken = new URLSearchParams(window.location.search).get('reset') || '';
     if (this.resetToken) this.authMode.set('reset');
     this.http.get<CurrentUser>('/auth-api/me').subscribe({
       next: user => { this.user.set(user); this.authChecking.set(false); this.initializeDashboard(); },
       error: () => this.authChecking.set(false)
     });
+  }
+
+  ngOnDestroy(): void {
+    window.removeEventListener('popstate', this.popStateHandler);
   }
 
   login(): void {
@@ -178,18 +178,93 @@ export class App implements OnInit {
 
   private initializeDashboard(): void {
     this.http.get<Filters>('/dashboard-api/filters').subscribe({ next: value => this.filters.set(value) });
+    if (this.page() === 'keywords') this.loadKeywords();
     this.load();
   }
 
+  navigate(page: DashboardPage, event?: MouseEvent): void {
+    if (event && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return;
+    event?.preventDefault();
+    const path = this.pagePath(page);
+    if (window.location.pathname !== path) window.history.pushState({}, '', path);
+    this.activatePage(page, true);
+  }
+
+  pagePath(page: DashboardPage): string {
+    return {
+      overview: '/',
+      keywords: '/palavras-chave',
+      sources: '/veiculos',
+      news: '/noticias'
+    }[page];
+  }
+
+  pageTitle(): string {
+    return {
+      overview: 'Panorama de impacto midiático',
+      keywords: 'Palavras-chave monitoradas',
+      sources: 'Cobertura por veículos',
+      news: 'Notícias monitoradas'
+    }[this.page()];
+  }
+
+  pageDescription(): string {
+    return {
+      overview: 'Veja o que exige atenção agora, sem excesso de informação.',
+      keywords: 'Defina os temas da sua conta e acompanhe o volume de cada termo.',
+      sources: 'Entenda quais veículos e editorias concentram a cobertura.',
+      news: 'Consulte, filtre e abra todas as notícias coletadas.'
+    }[this.page()];
+  }
+
   openKeywords(): void {
+    this.navigate('keywords');
+  }
+
+  private activatePage(page: DashboardPage, resetDetailFilters: boolean): void {
+    const changed = this.page() !== page;
+    this.page.set(page);
+    document.title = `${this.pageTitle()} — Mídia Radar`;
+
+    if (page === 'keywords' && this.user()) {
+      this.keywordError.set('');
+      this.keywordMessage.set('');
+      this.selectedKeywordIds.clear();
+      this.loadKeywords();
+    }
+
+    if (changed && resetDetailFilters && page !== 'news' && this.hasDetailFilters()) {
+      this.keyword = '';
+      this.source = '';
+      this.risk = '';
+      this.tone = '';
+      this.search = '';
+      if (this.user()) this.load();
+    }
+  }
+
+  private pageFromPath(): DashboardPage {
+    const path = decodeURI(window.location.pathname).replace(/\/+$/, '') || '/';
+    if (path === '/palavras-chave') return 'keywords';
+    if (path === '/veiculos') return 'sources';
+    if (path === '/noticias') return 'news';
+    return 'overview';
+  }
+
+  private hasDetailFilters(): boolean {
+    return Boolean(this.keyword || this.source || this.risk !== '' || this.tone || this.search);
+  }
+
+  closeKeywords(): void {
+    this.navigate('overview');
+  }
+
+  prepareKeywords(): void {
     this.keywordError.set('');
     this.keywordMessage.set('');
     this.selectedKeywordIds.clear();
-    this.keywordOpen.set(true);
     this.loadKeywords();
   }
-
-  closeKeywords(): void { this.keywordOpen.set(false); }
 
   openGeography(): void {
     this.geographySearch = '';
@@ -343,25 +418,18 @@ export class App implements OnInit {
     if (!this.reportGenerating()) this.reportOpen.set(false);
   }
 
-  selectedReportSections(): number {
-    return Object.values(this.reportSections).filter(Boolean).length;
-  }
-
   generateReport(): void {
-    if (!this.selectedReportSections()) {
-      this.reportError.set('Selecione pelo menos uma seção para o relatório.');
-      return;
-    }
     this.reportGenerating.set(true);
     this.reportError.set('');
     const params = this.params().set('includeAll', true);
     this.http.get<ReportOverview>('/dashboard-api/overview', { params }).subscribe({
       next: async value => {
         try {
-          await this.reportPdf.generate(value, this.reportSections, {
+          await this.reportPdf.generate(value, {
             periodLabel: `Últimos ${this.days} dias`,
             filters: this.activeFilterLabels(),
-            notes: this.reportNotes
+            notes: this.reportNotes,
+            dashboardUrl: `${window.location.origin}/noticias`
           });
           this.reportOpen.set(false);
         } catch {
@@ -387,6 +455,13 @@ export class App implements OnInit {
   date(value: string): string { return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)); }
   day(value: string): string { return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(new Date(value + 'T12:00:00')); }
   sourceType(source: string): string { return source.startsWith('Instagram/') ? 'Instagram' : source.includes('.') ? 'Web' : 'RSS'; }
+  priorityArticles(): Article[] {
+    return [...(this.data()?.articles ?? [])]
+      .sort((a, b) => b.risk - a.risk || b.impact - a.impact || Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
+      .slice(0, 6);
+  }
+  topKeyword(): Point | undefined { return this.data()?.byKeyword?.[0]; }
+  topSource(): Point | undefined { return this.data()?.bySource?.[0]; }
   visibleArticles(): Article[] {
     const term = this.search.trim().toLocaleLowerCase('pt-BR');
     if (!term) return this.data()?.articles ?? [];

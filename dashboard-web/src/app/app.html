@@ -1,169 +1,225 @@
 <ng-container *ngIf="user(); else loginView">
-<div class="shell">
-  <aside class="sidebar">
-    <div class="brand"><span class="brand-mark">M</span><div><strong>Mídia Radar</strong><small>Inteligência reputacional</small></div></div>
-    <nav>
-      <a class="active"><span>▦</span> Visão geral</a>
-      <a href="#keywords"><span>⌕</span> Palavras-chave</a>
-      <a href="#sources"><span>◎</span> Veículos</a>
-      <a href="#articles"><span>≡</span> Notícias</a>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">M</span>
+        <div><strong>Mídia Radar</strong><small>Inteligência reputacional</small></div>
+      </div>
+
+      <nav aria-label="Navegação principal">
+        <a href="/" [class.active]="page() === 'overview'" (click)="navigate('overview', $event)"><span>▦</span> Visão geral</a>
+        <a href="/palavras-chave" [class.active]="page() === 'keywords'" (click)="navigate('keywords', $event)"><span>⌕</span> Palavras-chave</a>
+        <a href="/veiculos" [class.active]="page() === 'sources'" (click)="navigate('sources', $event)"><span>◎</span> Veículos</a>
+        <a href="/noticias" [class.active]="page() === 'news'" (click)="navigate('news', $event)"><span>≡</span> Notícias</a>
+      </nav>
+
+      <div class="side-brief">
+        <p>ÚLTIMA ATUALIZAÇÃO</p>
+        <strong>{{ lastUpdate() }}</strong>
+        <span><i></i> Monitoramento ativo</span>
+      </div>
+      <div class="sidebar-footer"><span>MCS</span><span>Monitoramento diário</span></div>
+    </aside>
+
+    <nav class="mobile-nav" aria-label="Navegação mobile">
+      <a href="/" [class.active]="page() === 'overview'" (click)="navigate('overview', $event)"><span>▦</span><small>Visão geral</small></a>
+      <a href="/palavras-chave" [class.active]="page() === 'keywords'" (click)="navigate('keywords', $event)"><span>⌕</span><small>Palavras</small></a>
+      <a href="/veiculos" [class.active]="page() === 'sources'" (click)="navigate('sources', $event)"><span>◎</span><small>Veículos</small></a>
+      <a href="/noticias" [class.active]="page() === 'news'" (click)="navigate('news', $event)"><span>≡</span><small>Notícias</small></a>
     </nav>
-    <div class="side-status">
-      <p>SISTEMA</p>
-      <div><i class="online"></i><span>Coletor ativo<small>RSS e páginas web</small></span></div>
-      <div><i [class.online]="(data()?.kpis?.instagram ?? 0) > 0" class="pending"></i><span>Instagram<small>Aguardando credenciais</small></span></div>
-      <div><i class="pending"></i><span>Google Search<small>Aguardando credenciais</small></span></div>
-    </div>
-    <div class="sidebar-footer"><span>v1.0</span><span>Monitoramento diário</span></div>
-  </aside>
 
-  <main>
-    <header>
-      <div><p class="eyebrow">CENTRAL DE MONITORAMENTO DO MCS</p><h1>Panorama de impacto midiático</h1><p>Acompanhe menções, riscos e alcance editorial em uma única visão.</p></div>
-      <div class="header-actions"><span class="updated"><i></i> {{ user()?.displayName }}</span><button *ngIf="user()?.admin" class="report-button" (click)="openAccounts()">Contas</button><button class="report-button" (click)="openKeywords()">Palavras-chave</button><button class="report-button geography-button" (click)="openGeography()">⌖ {{ geographyLabel() }}</button><button class="report-button" (click)="openReport()" [disabled]="loading()">PDF Relatório</button><button class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button><button class="logout-button" (click)="logout()">Sair</button></div>
-    </header>
+    <main>
+      <header>
+        <div class="page-heading">
+          <p class="eyebrow">CENTRAL DE MONITORAMENTO DO MCS</p>
+          <h1>{{ pageTitle() }}</h1>
+          <p>{{ pageDescription() }}</p>
+        </div>
+        <div class="header-actions">
+          <label class="period-select"><span>Período</span><select [(ngModel)]="days" (change)="load()"><option [ngValue]="7">7 dias</option><option [ngValue]="30">30 dias</option><option [ngValue]="90">90 dias</option></select></label>
+          <button *ngIf="user()?.admin" class="utility-button" (click)="openAccounts()">Contas</button>
+          <button class="utility-button geography-button" (click)="openGeography()">⌖ {{ geographyLabel() }}</button>
+          <button *ngIf="page() === 'overview' || page() === 'news'" class="utility-button" (click)="openReport()" [disabled]="loading()">PDF</button>
+          <button class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button>
+          <button class="logout-button" (click)="logout()">Sair</button>
+        </div>
+      </header>
 
-    <div class="modal-backdrop" *ngIf="accountsOpen()" (click)="closeAccounts()">
-      <section class="report-modal" role="dialog" aria-modal="true" aria-labelledby="accounts-title" (click)="$event.stopPropagation()">
-        <div class="report-modal-head">
-          <div><p class="eyebrow">ADMINISTRAÇÃO</p><h2 id="accounts-title">Contas de acesso</h2><span>Crie um login separado para cada usuário do monitoramento.</span></div>
-          <button class="modal-close" (click)="closeAccounts()" aria-label="Fechar">×</button>
-        </div>
-        <form class="account-form" (ngSubmit)="createAccount()">
-          <input name="accountUsername" [(ngModel)]="accountUsername" maxlength="100" placeholder="Usuário" required>
-          <input name="accountEmail" [(ngModel)]="accountEmail" type="email" maxlength="254" placeholder="E-mail para recuperação" required>
-          <input name="accountPassword" [(ngModel)]="accountPassword" type="password" placeholder="Senha" required>
-          <label><input name="accountAdmin" [(ngModel)]="accountAdmin" type="checkbox"> Administrador</label>
-          <button type="submit">Criar conta</button>
-        </form>
-        <p class="report-error" *ngIf="accountError()">{{ accountError() }}</p>
-        <div class="keyword-list account-list">
-          <div *ngFor="let account of managedUsers()"><span><strong>{{ account.displayName }}</strong><small>{{ account.username }} · {{ account.email || 'e-mail pendente' }} · {{ account.admin ? 'Administrador' : 'Usuário' }}</small></span><i [class.inactive]="!account.active">{{ account.active ? 'Ativa' : 'Inativa' }}</i></div>
-        </div>
-      </section>
-    </div>
-
-    <div class="modal-backdrop" *ngIf="keywordOpen()" (click)="closeKeywords()">
-      <section class="report-modal keyword-modal" role="dialog" aria-modal="true" aria-labelledby="keyword-title" (click)="$event.stopPropagation()">
-        <div class="report-modal-head">
-          <div><p class="eyebrow">MONITORAMENTO PESSOAL</p><h2 id="keyword-title">Minhas palavras-chave</h2><span>Estas alterações afetam somente a sua conta.</span></div>
-          <button class="modal-close" (click)="closeKeywords()" aria-label="Fechar">×</button>
-        </div>
-        <form class="keyword-form keyword-batch-form" (ngSubmit)="addKeyword()">
-          <textarea name="newKeyword" [(ngModel)]="newKeyword" maxlength="5000" rows="4" placeholder="Cole uma ou várias palavras-chave, separadas por vírgula, ponto, ponto e vírgula, dois-pontos ou aspas."></textarea>
-          <button type="submit">Adicionar todas</button>
-        </form>
-        <small class="keyword-help">Termos repetidos são ignorados automaticamente.</small>
-        <p class="report-error" *ngIf="keywordError()">{{ keywordError() }}</p>
-        <p class="keyword-success" *ngIf="keywordMessage()">{{ keywordMessage() }}</p>
-        <div class="keyword-bulk-actions">
-          <label><input type="checkbox" [checked]="selectedKeywordIds.size === userKeywords().length && userKeywords().length > 0" (change)="toggleAllKeywords($any($event.target).checked)"> Selecionar todas</label>
-          <button type="button" (click)="removeSelectedKeywords()" [disabled]="!selectedKeywordIds.size">Remover selecionadas ({{ selectedKeywordIds.size }})</button>
-        </div>
-        <div class="keyword-list">
-          <div *ngFor="let item of userKeywords()"><label><input type="checkbox" [checked]="keywordSelected(item.id)" (change)="toggleKeyword(item.id, $any($event.target).checked)"><span>{{ item.keyword }}</span></label><button (click)="removeKeyword(item)" title="Remover">Remover</button></div>
-          <p *ngIf="!userKeywords().length" class="empty">Nenhuma palavra-chave cadastrada.</p>
-        </div>
-      </section>
-    </div>
-
-    <div class="modal-backdrop" *ngIf="geographyOpen()" (click)="closeGeography()">
-      <section class="report-modal geography-modal" role="dialog" aria-modal="true" aria-labelledby="geography-title" (click)="$event.stopPropagation()">
-        <div class="report-modal-head">
-          <div><p class="eyebrow">ABRANGÊNCIA</p><h2 id="geography-title">Escolha as localizações</h2><span>Brasil inteiro é o padrão. Selecione todo o estado ou quantos municípios desejar.</span></div>
-          <button class="modal-close" (click)="closeGeography()" aria-label="Fechar">×</button>
-        </div>
-        <label class="municipality-search"><span>Pesquisar município</span><input [(ngModel)]="geographySearch" placeholder="Ex.: Niterói, Maricá, Petrópolis…"></label>
-        <div class="municipality-list">
-          <button type="button" [class.selected]="!draftLocations.size" (click)="selectBrazil()"><strong>Brasil inteiro</strong><small>Todos os estados e municípios</small></button>
-          <label class="municipality-option state-option" [class.selected]="locationChecked('estado_rj')"><input type="checkbox" [checked]="locationChecked('estado_rj')" (change)="toggleLocation('estado_rj', $any($event.target).checked)"><span><strong>Todo o Estado do Rio de Janeiro</strong><small>Capital e todos os 92 municípios</small></span></label>
-          <label class="municipality-option" *ngFor="let municipality of filteredMunicipalities()" [class.selected]="locationChecked(municipality)"><input type="checkbox" [checked]="locationChecked(municipality)" (change)="toggleLocation(municipality, $any($event.target).checked)"><span>{{ municipality }}</span></label>
-          <p class="empty" *ngIf="!filteredMunicipalities().length">Nenhum município encontrado.</p>
-        </div>
-        <div class="geography-actions"><span>{{ draftLocations.size ? draftLocations.size + ' seleção(ões)' : 'Brasil inteiro' }}</span><button type="button" class="cancel-report" (click)="closeGeography()">Cancelar</button><button type="button" class="generate-report" (click)="applyLocations()">Aplicar filtro</button></div>
-      </section>
-    </div>
-
-    <div class="modal-backdrop" *ngIf="reportOpen()" (click)="closeReport()">
-      <section class="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title" (click)="$event.stopPropagation()">
-        <div class="report-modal-head">
-          <div><p class="eyebrow">EXPORTAÇÃO PERSONALIZADA</p><h2 id="report-title">Emitir relatório em PDF</h2><span>O PDF respeitará o período e os filtros atuais do dashboard.</span></div>
-          <button class="modal-close" (click)="closeReport()" aria-label="Fechar">×</button>
-        </div>
-        <div class="report-options">
-          <label><input type="checkbox" [(ngModel)]="reportSections.summary"><span><strong>Resumo executivo</strong><small>KPIs, volume, fontes, riscos e impacto médio.</small></span></label>
-          <label><input type="checkbox" [(ngModel)]="reportSections.distributions"><span><strong>Distribuições e cobertura</strong><small>Risco, editorias, veículos e palavras-chave.</small></span></label>
-          <label><input type="checkbox" [(ngModel)]="reportSections.relevant"><span><strong>Notícias relevantes</strong><small>Impacto igual ou superior a 4 ou com risco identificado.</small></span></label>
-          <label><input type="checkbox" [(ngModel)]="reportSections.critical"><span><strong>Notícias de risco crítico</strong><small>Relação completa das notícias classificadas como risco 10.</small></span></label>
-          <label><input type="checkbox" [(ngModel)]="reportSections.journalists"><span><strong>Análise de jornalistas</strong><small>Produção, alertas críticos e impacto médio por responsável.</small></span></label>
-          <label><input type="checkbox" [(ngModel)]="reportSections.allNews"><span><strong>Todas as notícias</strong><small>Relação integral do período, sem o limite de 100 itens da tela.</small></span></label>
-        </div>
-        <label class="report-notes"><strong>Anotações do analista</strong><small>Até três parágrafos; o texto será incluído no PDF.</small><textarea [(ngModel)]="reportNotes" rows="10" maxlength="3000" placeholder="Escreva aqui observações, contexto e recomendações…"></textarea><span>{{ reportNotes.length }}/3000</span></label>
-        <p class="report-error" *ngIf="reportError()">{{ reportError() }}</p>
-        <div class="report-modal-actions">
-          <span>{{ selectedReportSections() }} seções selecionadas</span>
-          <button class="cancel-report" (click)="closeReport()" [disabled]="reportGenerating()">Cancelar</button>
-          <button class="generate-report" (click)="generateReport()" [disabled]="reportGenerating() || !selectedReportSections()">{{ reportGenerating() ? 'Gerando PDF…' : 'Baixar PDF' }}</button>
-        </div>
-      </section>
-    </div>
-
-    <section class="filters">
-      <label><span>Período</span><select [(ngModel)]="days" (change)="load()"><option [ngValue]="7">Últimos 7 dias</option><option [ngValue]="30">Últimos 30 dias</option><option [ngValue]="90">Últimos 90 dias</option></select></label>
-      <label><span>Palavra-chave</span><select [(ngModel)]="keyword" (change)="load()"><option value="">Todas as palavras</option><option *ngFor="let item of filters().keywords" [value]="item">{{ item }}</option></select></label>
-      <label><span>Veículo</span><select [(ngModel)]="source" (change)="load()"><option value="">Todos os veículos</option><option *ngFor="let item of filters().sources" [value]="item">{{ item }}</option></select></label>
-      <label><span>Risco</span><select [(ngModel)]="risk" (change)="load()"><option value="">Todos os riscos</option><option value="10">Risco 10</option><option value="5">Risco 5</option><option value="0">Risco 0</option></select></label>
-      <label><span>Tom</span><select [(ngModel)]="tone" (change)="load()"><option value="">Todos os tons</option><option *ngFor="let item of filters().tones" [value]="item">{{ toneLabel(item) }}</option></select></label>
-      <button class="clear" (click)="clear()">Limpar filtros</button>
-    </section>
-
-    <div *ngIf="loading()" class="state"><span class="spinner"></span> Atualizando indicadores…</div>
-    <div *ngIf="error()" class="state error">{{ error() }}</div>
-
-    <ng-container *ngIf="data() as dashboard">
-      <section class="kpis">
-        <article><div class="icon violet">▤</div><div><small>MENÇÕES COLETADAS</small><strong>{{ dashboard.kpis.articles }}</strong><span>No período selecionado</span></div></article>
-        <article><div class="icon blue">◎</div><div><small>VEÍCULOS DISTINTOS</small><strong>{{ dashboard.kpis.sources }}</strong><span>Fontes monitoradas</span></div></article>
-        <article class="danger-card"><div class="icon red">!</div><div><small>ALERTAS CRÍTICOS</small><strong>{{ dashboard.kpis.risk10 }}</strong><span>Classificação risco 10</span></div></article>
-        <article class="impact-card" [ngClass]="impactClass(dashboard.kpis.averageImpact)"><div class="icon amber">↗</div><div class="impact-content"><small>IMPACTO MIDIÁTICO MÉDIO <span class="info" title="Combina risco, quantidade de palavras-chave encontradas e relevância da fonte.">i</span></small><strong>{{ dashboard.kpis.averageImpact | number:'1.1-2' }} <em>/ 10</em></strong><div class="impact-scale"><i [style.width.%]="dashboard.kpis.averageImpact * 10"></i></div><span>{{ impactLabel(dashboard.kpis.averageImpact) }}</span></div></article>
-      </section>
-
-      <section class="grid two">
-        <article class="panel timeline-panel">
-          <div class="panel-head"><div><p>EVOLUÇÃO</p><h2>Menções ao longo do tempo</h2></div><span>{{ dashboard.kpis.articles }} registros</span></div>
-          <div class="timeline">
-            <div *ngFor="let point of dashboard.timeline" class="timeline-column" [title]="point.value + ' menções'">
-              <b>{{ point.value }}</b><div class="timeline-bar" [style.height.%]="width(point, dashboard.timeline)"></div><small>{{ day(point.label) }}</small>
-            </div>
+      <div class="modal-backdrop" *ngIf="accountsOpen()" (click)="closeAccounts()">
+        <section class="report-modal" role="dialog" aria-modal="true" aria-labelledby="accounts-title" (click)="$event.stopPropagation()">
+          <div class="report-modal-head">
+            <div><p class="eyebrow">ADMINISTRAÇÃO</p><h2 id="accounts-title">Contas de acesso</h2><span>Crie um login separado para cada usuário do monitoramento.</span></div>
+            <button class="modal-close" (click)="closeAccounts()" aria-label="Fechar">×</button>
           </div>
-        </article>
-        <article class="panel risk-panel">
-          <div class="panel-head"><div><p>CLASSIFICAÇÃO</p><h2>Risco e tom das notícias</h2></div></div>
-          <h3 class="classification-title">CLASSIFICAÇÃO DE RISCO</h3>
-          <div class="risk-list"><div *ngFor="let point of dashboard.byRisk"><span class="risk-dot" [class]="point.label.includes('10') ? 'risk-dot critical-bg' : point.label.includes('5') ? 'risk-dot attention-bg' : 'risk-dot neutral-bg'"></span><strong>{{ point.label }}</strong><div class="meter"><i [style.width.%]="width(point, dashboard.byRisk)"></i></div><b>{{ point.value }}</b></div></div>
-          <h3 class="classification-title tone-title">TOM DAS NOTÍCIAS</h3>
-          <div class="tone-list"><div *ngFor="let point of dashboard.byTone"><span class="tone-dot"></span><strong>{{ point.label }}</strong><div class="meter tone-meter"><i [style.width.%]="width(point, dashboard.byTone)"></i></div><b>{{ point.value }}</b></div></div>
-        </article>
-      </section>
+          <form class="account-form" (ngSubmit)="createAccount()">
+            <input name="accountUsername" [(ngModel)]="accountUsername" maxlength="100" placeholder="Usuário" required>
+            <input name="accountEmail" [(ngModel)]="accountEmail" type="email" maxlength="254" placeholder="E-mail para recuperação" required>
+            <input name="accountPassword" [(ngModel)]="accountPassword" type="password" placeholder="Senha" required>
+            <label><input name="accountAdmin" [(ngModel)]="accountAdmin" type="checkbox"> Administrador</label>
+            <button type="submit">Criar conta</button>
+          </form>
+          <p class="report-error" *ngIf="accountError()">{{ accountError() }}</p>
+          <div class="keyword-list account-list">
+            <div *ngFor="let account of managedUsers()"><span><strong>{{ account.displayName }}</strong><small>{{ account.username }} · {{ account.email || 'e-mail pendente' }} · {{ account.admin ? 'Administrador' : 'Usuário' }}</small></span><i [class.inactive]="!account.active">{{ account.active ? 'Ativa' : 'Inativa' }}</i></div>
+          </div>
+        </section>
+      </div>
 
-      <section class="grid two" id="keywords">
-        <article class="panel">
-          <div class="panel-head"><div><p>TERMOS MONITORADOS</p><h2>Menções por palavra-chave</h2></div><span>Top 20</span></div>
-          <div class="bars"><div *ngFor="let point of dashboard.byKeyword"><div class="bar-label"><span>{{ point.label }}</span><b>{{ point.value }}</b></div><div class="bar-track"><i [style.width.%]="width(point, dashboard.byKeyword)"></i></div></div><p *ngIf="!dashboard.byKeyword.length" class="empty">Nenhuma palavra encontrada neste filtro.</p></div>
-        </article>
-        <article class="panel" id="sources">
-          <div class="panel-head"><div><p>COBERTURA</p><h2>Notícias por veículo</h2></div><span>{{ dashboard.kpis.sources }} fontes</span></div>
-          <div class="source-list"><div *ngFor="let point of dashboard.bySource"><div class="source-icon">{{ point.label.charAt(0) }}</div><div><strong>{{ point.label }}</strong><span>{{ sourceType(point.label) }}</span></div><div class="mini-track"><i [style.width.%]="width(point, dashboard.bySource)"></i></div><b>{{ point.value }}</b></div></div>
-        </article>
-      </section>
+      <div class="modal-backdrop" *ngIf="geographyOpen()" (click)="closeGeography()">
+        <section class="report-modal geography-modal" role="dialog" aria-modal="true" aria-labelledby="geography-title" (click)="$event.stopPropagation()">
+          <div class="report-modal-head">
+            <div><p class="eyebrow">ABRANGÊNCIA</p><h2 id="geography-title">Escolha as localizações</h2><span>Brasil inteiro é o padrão. Selecione todo o estado ou quantos municípios desejar.</span></div>
+            <button class="modal-close" (click)="closeGeography()" aria-label="Fechar">×</button>
+          </div>
+          <label class="municipality-search"><span>Pesquisar município</span><input [(ngModel)]="geographySearch" placeholder="Ex.: Niterói, Maricá, Petrópolis…"></label>
+          <div class="municipality-list">
+            <button type="button" [class.selected]="!draftLocations.size" (click)="selectBrazil()"><strong>Brasil inteiro</strong><small>Todos os estados e municípios</small></button>
+            <label class="municipality-option state-option" [class.selected]="locationChecked('estado_rj')"><input type="checkbox" [checked]="locationChecked('estado_rj')" (change)="toggleLocation('estado_rj', $any($event.target).checked)"><span><strong>Todo o Estado do Rio de Janeiro</strong><small>Capital e todos os 92 municípios</small></span></label>
+            <label class="municipality-option" *ngFor="let municipality of filteredMunicipalities()" [class.selected]="locationChecked(municipality)"><input type="checkbox" [checked]="locationChecked(municipality)" (change)="toggleLocation(municipality, $any($event.target).checked)"><span>{{ municipality }}</span></label>
+            <p class="empty" *ngIf="!filteredMunicipalities().length">Nenhum município encontrado.</p>
+          </div>
+          <div class="geography-actions"><span>{{ draftLocations.size ? draftLocations.size + ' seleção(ões)' : 'Brasil inteiro' }}</span><button type="button" class="cancel-report" (click)="closeGeography()">Cancelar</button><button type="button" class="generate-report" (click)="applyLocations()">Aplicar filtro</button></div>
+        </section>
+      </div>
 
-      <section class="panel articles" id="articles">
-        <div class="panel-head"><div><p>CONTEÚDO COLETADO</p><h2>Notícias e evidências</h2></div><label class="search">⌕ <input [(ngModel)]="search" placeholder="Buscar nesta tabela"></label></div>
-        <div class="table-wrap"><table><thead><tr><th>Notícia</th><th>Veículo</th><th>Editoria</th><th>Risco</th><th>Impacto</th><th>Publicação</th></tr></thead><tbody><tr *ngFor="let article of visibleArticles()"><td><a [href]="article.url" target="_blank" rel="noopener">{{ article.title }}</a><div class="tags"><span *ngFor="let word of article.keywords.slice(0, 3)">{{ word }}</span></div></td><td><strong>{{ article.source }}</strong><small *ngIf="article.journalist">{{ article.journalist }}</small></td><td>{{ toneLabel(article.section) }}</td><td><span class="risk-badge" [ngClass]="riskClass(article.risk)">{{ article.risk }}</span><small>{{ toneLabel(article.tone) }}</small></td><td><b>{{ article.impact | number:'1.1-1' }}</b></td><td>{{ date(article.publishedAt) }}</td></tr></tbody></table></div>
-      </section>
-    </ng-container>
-  </main>
-</div>
+      <div class="modal-backdrop" *ngIf="reportOpen()" (click)="closeReport()">
+        <section class="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title" (click)="$event.stopPropagation()">
+          <div class="report-modal-head">
+            <div><p class="eyebrow">RESUMO EXECUTIVO</p><h2 id="report-title">Emitir relatório em PDF</h2><span>Um documento objetivo, com no máximo duas páginas.</span></div>
+            <button class="modal-close" (click)="closeReport()" aria-label="Fechar">×</button>
+          </div>
+          <div class="report-plan">
+            <article><span>1</span><div><strong>Panorama executivo</strong><small>Indicadores, leitura do período, riscos, veículos e palavras-chave.</small></div></article>
+            <article><span>2</span><div><strong>Notícias prioritárias</strong><small>Até 12 destaques ordenados por risco e impacto, com links clicáveis.</small></div></article>
+          </div>
+          <label class="report-notes"><strong>Nota opcional do analista</strong><small>Use um texto curto para preservar o formato executivo.</small><textarea [(ngModel)]="reportNotes" rows="6" maxlength="700" placeholder="Inclua uma observação ou recomendação objetiva…"></textarea><span>{{ reportNotes.length }}/700</span></label>
+          <p class="report-error" *ngIf="reportError()">{{ reportError() }}</p>
+          <div class="report-modal-actions">
+            <span>Máximo de 2 páginas A4</span>
+            <button class="cancel-report" (click)="closeReport()" [disabled]="reportGenerating()">Cancelar</button>
+            <button class="generate-report" (click)="generateReport()" [disabled]="reportGenerating()">{{ reportGenerating() ? 'Gerando PDF…' : 'Baixar resumo' }}</button>
+          </div>
+        </section>
+      </div>
+
+      <div *ngIf="loading()" class="state"><span class="spinner"></span> Atualizando indicadores…</div>
+      <div *ngIf="error()" class="state error">{{ error() }}</div>
+
+      <ng-container *ngIf="data() as dashboard">
+        <ng-container *ngIf="page() === 'overview'">
+          <section class="kpis">
+            <article><div class="icon violet">▤</div><div><small>MENÇÕES COLETADAS</small><strong>{{ dashboard.kpis.articles }}</strong><span>Nos últimos {{ days }} dias</span></div></article>
+            <article><div class="icon blue">◎</div><div><small>VEÍCULOS DISTINTOS</small><strong>{{ dashboard.kpis.sources }}</strong><span>Fontes com conteúdo relevante</span></div></article>
+            <article class="danger-card"><div class="icon red">!</div><div><small>ALERTAS CRÍTICOS</small><strong>{{ dashboard.kpis.risk10 }}</strong><span>{{ dashboard.kpis.risk10 ? 'Exigem leitura prioritária' : 'Nenhum alerta crítico' }}</span></div></article>
+            <article class="impact-card" [ngClass]="impactClass(dashboard.kpis.averageImpact)"><div class="icon amber">↗</div><div class="impact-content"><small>IMPACTO MÉDIO <span class="info" title="Combina risco, palavras-chave encontradas e relevância da fonte.">i</span></small><strong>{{ dashboard.kpis.averageImpact | number:'1.1-2' }} <em>/ 10</em></strong><div class="impact-scale"><i [style.width.%]="dashboard.kpis.averageImpact * 10"></i></div><span>{{ impactLabel(dashboard.kpis.averageImpact) }}</span></div></article>
+          </section>
+
+          <section class="insight-strip">
+            <article [class.warning]="dashboard.kpis.risk10 > 0"><span>PRIORIDADE</span><strong>{{ dashboard.kpis.risk10 > 0 ? dashboard.kpis.risk10 + ' notícias em risco 10' : 'Sem alertas críticos' }}</strong><small>{{ dashboard.kpis.risk10 > 0 ? 'Revise os destaques abaixo.' : 'O período está sem ocorrências críticas.' }}</small></article>
+            <article><span>ASSUNTO MAIS CITADO</span><strong>{{ topKeyword()?.label || 'Sem termo dominante' }}</strong><small>{{ topKeyword()?.value || 0 }} menções classificadas</small></article>
+            <article><span>MAIOR COBERTURA</span><strong>{{ topSource()?.label || 'Sem veículo dominante' }}</strong><small>{{ topSource()?.value || 0 }} notícias no período</small></article>
+          </section>
+
+          <section class="grid two overview-grid">
+            <article class="panel timeline-panel">
+              <div class="panel-head"><div><p>EVOLUÇÃO</p><h2>Menções ao longo do tempo</h2></div><span>{{ dashboard.kpis.articles }} registros</span></div>
+              <div class="timeline">
+                <div *ngFor="let point of dashboard.timeline" class="timeline-column" [title]="point.value + ' menções'">
+                  <b>{{ point.value }}</b><div class="timeline-bar" [style.height.%]="width(point, dashboard.timeline)"></div><small>{{ day(point.label) }}</small>
+                </div>
+              </div>
+            </article>
+            <article class="panel risk-panel">
+              <div class="panel-head"><div><p>CLASSIFICAÇÃO</p><h2>Risco e tom</h2></div></div>
+              <h3 class="classification-title">CLASSIFICAÇÃO DE RISCO</h3>
+              <div class="risk-list"><div *ngFor="let point of dashboard.byRisk"><span class="risk-dot" [class]="point.label.includes('10') ? 'risk-dot critical-bg' : point.label.includes('5') ? 'risk-dot attention-bg' : 'risk-dot neutral-bg'"></span><strong>{{ point.label }}</strong><div class="meter"><i [style.width.%]="width(point, dashboard.byRisk)"></i></div><b>{{ point.value }}</b></div></div>
+              <h3 class="classification-title tone-title">TOM DAS NOTÍCIAS</h3>
+              <div class="tone-list"><div *ngFor="let point of dashboard.byTone"><span class="tone-dot"></span><strong>{{ toneLabel(point.label) }}</strong><div class="meter tone-meter"><i [style.width.%]="width(point, dashboard.byTone)"></i></div><b>{{ point.value }}</b></div></div>
+            </article>
+          </section>
+
+          <section class="panel priority-panel">
+            <div class="panel-head">
+              <div><p>LEITURA PRIORITÁRIA</p><h2>Notícias que merecem atenção</h2></div>
+              <a href="/noticias" (click)="navigate('news', $event)">Ver todas as notícias →</a>
+            </div>
+            <div class="priority-list">
+              <a *ngFor="let article of priorityArticles()" [href]="article.url" target="_blank" rel="noopener">
+                <span class="risk-badge" [ngClass]="riskClass(article.risk)">{{ article.risk }}</span>
+                <div><strong>{{ article.title }}</strong><small>{{ article.source }} · {{ date(article.publishedAt) }}</small></div>
+                <b>{{ article.impact | number:'1.1-1' }}</b>
+              </a>
+              <p *ngIf="!priorityArticles().length" class="empty">Nenhuma notícia relevante neste período.</p>
+            </div>
+          </section>
+        </ng-container>
+
+        <ng-container *ngIf="page() === 'keywords'">
+          <section class="page-summary">
+            <article><span>TERMOS ATIVOS</span><strong>{{ userKeywords().length }}</strong><small>Palavras-chave nesta conta</small></article>
+            <article><span>MENÇÕES CLASSIFICADAS</span><strong>{{ dashboard.kpis.articles }}</strong><small>Notícias no período atual</small></article>
+            <article><span>TERMO EM DESTAQUE</span><strong>{{ topKeyword()?.label || '—' }}</strong><small>{{ topKeyword()?.value || 0 }} ocorrências</small></article>
+          </section>
+          <section class="keyword-layout">
+            <article class="panel keyword-workspace">
+              <div class="panel-head"><div><p>CONFIGURAÇÃO</p><h2>Gerenciar palavras-chave</h2></div><span>Somente sua conta</span></div>
+              <form class="keyword-form keyword-batch-form" (ngSubmit)="addKeyword()">
+                <textarea name="newKeyword" [(ngModel)]="newKeyword" maxlength="5000" rows="5" placeholder="Cole uma ou várias palavras-chave, separadas por vírgula, ponto, ponto e vírgula, dois-pontos ou aspas."></textarea>
+                <button type="submit">Adicionar palavras-chave</button>
+              </form>
+              <small class="keyword-help">Termos repetidos são ignorados automaticamente.</small>
+              <p class="report-error" *ngIf="keywordError()">{{ keywordError() }}</p>
+              <p class="keyword-success" *ngIf="keywordMessage()">{{ keywordMessage() }}</p>
+              <div class="keyword-bulk-actions">
+                <label><input type="checkbox" [checked]="selectedKeywordIds.size === userKeywords().length && userKeywords().length > 0" (change)="toggleAllKeywords($any($event.target).checked)"> Selecionar todas</label>
+                <button type="button" (click)="removeSelectedKeywords()" [disabled]="!selectedKeywordIds.size">Remover selecionadas ({{ selectedKeywordIds.size }})</button>
+              </div>
+              <div class="keyword-list">
+                <div *ngFor="let item of userKeywords()"><label><input type="checkbox" [checked]="keywordSelected(item.id)" (change)="toggleKeyword(item.id, $any($event.target).checked)"><span>{{ item.keyword }}</span></label><button (click)="removeKeyword(item)" title="Remover">Remover</button></div>
+                <p *ngIf="!userKeywords().length" class="empty">Nenhuma palavra-chave cadastrada.</p>
+              </div>
+            </article>
+            <article class="panel">
+              <div class="panel-head"><div><p>DESEMPENHO</p><h2>Menções por palavra-chave</h2></div><span>Top 20</span></div>
+              <div class="bars"><div *ngFor="let point of dashboard.byKeyword"><div class="bar-label"><span>{{ point.label }}</span><b>{{ point.value }}</b></div><div class="bar-track"><i [style.width.%]="width(point, dashboard.byKeyword)"></i></div></div><p *ngIf="!dashboard.byKeyword.length" class="empty">Nenhuma palavra encontrada neste período.</p></div>
+            </article>
+          </section>
+        </ng-container>
+
+        <ng-container *ngIf="page() === 'sources'">
+          <section class="page-summary">
+            <article><span>VEÍCULOS DISTINTOS</span><strong>{{ dashboard.kpis.sources }}</strong><small>Fontes com notícias relevantes</small></article>
+            <article><span>NOTÍCIAS ANALISADAS</span><strong>{{ dashboard.kpis.articles }}</strong><small>Nos últimos {{ days }} dias</small></article>
+            <article><span>MAIOR COBERTURA</span><strong>{{ topSource()?.label || '—' }}</strong><small>{{ topSource()?.value || 0 }} notícias</small></article>
+          </section>
+          <section class="grid two source-page-grid">
+            <article class="panel">
+              <div class="panel-head"><div><p>COBERTURA</p><h2>Notícias por veículo</h2></div><span>{{ dashboard.kpis.sources }} fontes</span></div>
+              <div class="source-list extended"><div *ngFor="let point of dashboard.bySource"><div class="source-icon">{{ point.label.charAt(0) }}</div><div><strong>{{ point.label }}</strong><span>{{ sourceType(point.label) }}</span></div><div class="mini-track"><i [style.width.%]="width(point, dashboard.bySource)"></i></div><b>{{ point.value }}</b></div></div>
+            </article>
+            <article class="panel">
+              <div class="panel-head"><div><p>EDITORIAS</p><h2>Distribuição por assunto</h2></div><span>{{ dashboard.bySection.length }} categorias</span></div>
+              <div class="bars section-bars"><div *ngFor="let point of dashboard.bySection"><div class="bar-label"><span>{{ toneLabel(point.label) }}</span><b>{{ point.value }}</b></div><div class="bar-track"><i [style.width.%]="width(point, dashboard.bySection)"></i></div></div><p *ngIf="!dashboard.bySection.length" class="empty">Nenhuma editoria encontrada.</p></div>
+            </article>
+          </section>
+        </ng-container>
+
+        <ng-container *ngIf="page() === 'news'">
+          <section class="filters news-filters">
+            <label><span>Palavra-chave</span><select [(ngModel)]="keyword" (change)="load()"><option value="">Todas as palavras</option><option *ngFor="let item of filters().keywords" [value]="item">{{ item }}</option></select></label>
+            <label><span>Veículo</span><select [(ngModel)]="source" (change)="load()"><option value="">Todos os veículos</option><option *ngFor="let item of filters().sources" [value]="item">{{ item }}</option></select></label>
+            <label><span>Risco</span><select [(ngModel)]="risk" (change)="load()"><option value="">Todos os riscos</option><option value="10">Risco 10</option><option value="5">Risco 5</option><option value="0">Risco 0</option></select></label>
+            <label><span>Tom</span><select [(ngModel)]="tone" (change)="load()"><option value="">Todos os tons</option><option *ngFor="let item of filters().tones" [value]="item">{{ toneLabel(item) }}</option></select></label>
+            <button class="clear" (click)="clear()">Limpar filtros</button>
+          </section>
+          <section class="panel articles">
+            <div class="panel-head"><div><p>CONTEÚDO COLETADO</p><h2>{{ visibleArticles().length }} notícias encontradas</h2></div><label class="search">⌕ <input [(ngModel)]="search" placeholder="Buscar por título, veículo ou termo"></label></div>
+            <div class="table-wrap"><table><thead><tr><th>Notícia</th><th>Veículo</th><th>Editoria</th><th>Risco</th><th>Impacto</th><th>Publicação</th></tr></thead><tbody><tr *ngFor="let article of visibleArticles()"><td><a [href]="article.url" target="_blank" rel="noopener">{{ article.title }}</a><div class="tags"><span *ngFor="let word of article.keywords.slice(0, 3)">{{ word }}</span></div></td><td><strong>{{ article.source }}</strong><small *ngIf="article.journalist">{{ article.journalist }}</small></td><td>{{ toneLabel(article.section) }}</td><td><span class="risk-badge" [ngClass]="riskClass(article.risk)">{{ article.risk }}</span><small>{{ toneLabel(article.tone) }}</small></td><td><b>{{ article.impact | number:'1.1-1' }}</b></td><td>{{ date(article.publishedAt) }}</td></tr></tbody></table></div>
+          </section>
+        </ng-container>
+      </ng-container>
+    </main>
+  </div>
 </ng-container>
 
 <ng-template #loginView>
