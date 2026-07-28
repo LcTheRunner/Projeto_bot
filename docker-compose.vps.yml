@@ -38,5 +38,35 @@ services:
       - "./config:/app/config:ro"
     restart: unless-stopped
 
+  dashboard-api:
+    build: ./dashboard-api
+    env_file: .env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mariadb://db:3306/media_monitor
+      SPRING_DATASOURCE_USERNAME: media
+      SPRING_DATASOURCE_PASSWORD: media
+      DASHBOARD_PUBLIC_URL: https://news.venturi.vps-kinghost.net
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  dashboard-web:
+    build: ./dashboard-web
+    expose:
+      - "80"
+    depends_on:
+      - dashboard-api
+      - api
+    networks:
+      - default
+      - npm_proxy
+    restart: unless-stopped
+
 volumes:
   mariadb_data:
+
+networks:
+  npm_proxy:
+    external: true
+    name: nginx-proxy-manager_default
