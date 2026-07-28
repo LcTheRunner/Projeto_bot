@@ -15,6 +15,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/auth-api/me').flush({ id: 1, username: 'equipe', displayName: 'Administrador MCS', admin: true });
     http.expectOne('/dashboard-api/filters').flush({ sources: [], sections: [], risks: [0, 5, 10], keywords: [], tones: [] });
     http.expectOne(request => request.url === '/dashboard-api/overview').flush({
       periodDays: 7, generatedAt: new Date().toISOString(),
@@ -24,7 +25,9 @@ describe('App', () => {
     fixture.detectChanges();
     expect(fixture.componentInstance).toBeTruthy();
     expect((fixture.nativeElement as HTMLElement).querySelector('h1')?.textContent).toContain('Panorama de impacto midiático');
-    (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.report-button')?.click();
+    const reportButton = [...(fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.report-button')]
+      .find(button => button.textContent?.includes('PDF'));
+    reportButton?.click();
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).querySelector('#report-title')?.textContent).toContain('Emitir relatório em PDF');
     expect((fixture.nativeElement as HTMLElement).querySelectorAll('.report-options input').length).toBe(6);

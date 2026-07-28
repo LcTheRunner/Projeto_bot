@@ -28,6 +28,7 @@ services:
     volumes: ["./config:/app/config:ro"]
   dashboard-api:
     build: ./dashboard-api
+    env_file: .env
     environment:
       SPRING_DATASOURCE_URL: jdbc:mariadb://db:3306/media_monitor
       SPRING_DATASOURCE_USERNAME: media
@@ -37,9 +38,6 @@ services:
     restart: unless-stopped
   dashboard-web:
     build: ./dashboard-web
-    environment:
-      DASHBOARD_USER: ${DASHBOARD_USER:-equipe}
-      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
     ports: ["4200:80"]
     depends_on:
       - dashboard-api

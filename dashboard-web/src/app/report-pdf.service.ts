@@ -25,6 +25,7 @@ export interface ReportSections {
 export interface ReportContext {
   periodLabel: string;
   filters: string[];
+  notes?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -98,6 +99,22 @@ export class ReportPdfService {
         ],
         { 0: { cellWidth: 120 } }
       );
+    }
+
+    if (context.notes?.trim()) {
+      title('Anotações do analista');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(55, 62, 82);
+      for (const paragraph of context.notes.trim().split(/\n\s*\n/).slice(0, 3)) {
+        const lines = doc.splitTextToSize(paragraph.replace(/\s*\n\s*/g, ' '), pageWidth - margin * 2);
+        for (const line of lines) {
+          addPageIfNeeded(8);
+          doc.text(line, margin, y);
+          y += 4.5;
+        }
+        y += 3;
+      }
     }
 
     if (sections.distributions) {

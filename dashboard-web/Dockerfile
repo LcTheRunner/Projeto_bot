@@ -6,7 +6,6 @@ COPY . .
 RUN npm run build
 
 FROM nginx:1.29-alpine
-RUN apk add --no-cache apache2-utils
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker-entrypoint-dashboard.sh /usr/local/bin/docker-entrypoint-dashboard.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint-dashboard.sh

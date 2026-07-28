@@ -1,7 +1,7 @@
 import json
 import re
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from app.classifier import classify, is_relevant, normalize, result_json
 from app.collectors import rss_items, google_news_items, google_items, instagram_items, enrich
@@ -58,17 +58,17 @@ def prune_expired(db: Session) -> int:
         db.commit()
     return len(expired)
 
-def save_item(db: Session, item: dict) -> Article | None:
+def save_item(db: Session, item: dict, user_keywords: list[str] | None = None) -> Article | None:
     if not item.get("url") or db.scalar(select(Article).where(Article.url == item["url"])): return None
     item = dict(item)
     source_weight = float(item.pop("_source_weight", 1.0))
     skip_enrich = bool(item.pop("_skip_enrich", False))
     if not is_recent(item.get("published_at")): return None
-    if not is_relevant(item.get("title", ""), item.get("body", "")): return None
+    if not is_relevant(item.get("title", ""), item.get("body", ""), user_keywords): return None
     if not skip_enrich:
         item = enrich(item)
-    result = classify(item["title"], item["body"], source_weight=source_weight)
-    if not is_relevant(item["title"], item["body"]): return None
+    result = classify(item["title"], item["body"], source_weight=source_weight, extra_terms=user_keywords)
+    if not is_relevant(item["title"], item["body"], user_keywords): return None
     keywords, evidence = result_json(result)
     article = Article(**item, section=result.section)
     article.classification = Classification(risk_score=result.risk_score, tone=result.tone, impact_score=result.impact_score, matched_keywords=keywords, evidence=evidence)
@@ -78,15 +78,16 @@ def save_item(db: Session, item: dict) -> Article | None:
 def collect(db: Session) -> dict:
     removed = prune_expired(db)
     sources = yaml_config("sources.yaml")
-    items = rss_items() + google_news_items()
+    user_keywords = _user_keywords(db)
+    items = rss_items() + google_news_items(user_keywords)
     if sources.get("google", {}).get("enabled", False):
         for query in sources.get("google", {}).get("queries", []): items += google_items(query)
     if sources.get("instagram", {}).get("enabled", False):
         for hashtag in yaml_config("keywords.yaml").get("hashtags_instagram", []): items += instagram_items(hashtag)
     unique = list({item.get("url"): item for item in items if item.get("url")}.values())
     recent = [item for item in unique if is_recent(item.get("published_at"))]
-    relevant = [item for item in recent if is_relevant(item.get("title", ""), item.get("body", ""))]
-    saved = sum(save_item(db, item) is not None for item in relevant)
+    relevant = [item for item in recent if is_relevant(item.get("title", ""), item.get("body", ""), user_keywords)]
+    saved = sum(save_item(db, item, user_keywords) is not None for item in relevant)
     return {
         "encontrados": len(unique),
         "ultimas_72h": len(recent),
@@ -95,6 +96,14 @@ def collect(db: Session) -> dict:
         "novos": saved,
         "expirados_removidos": removed,
     }
+
+def _user_keywords(db: Session) -> list[str]:
+    try:
+        rows = db.execute(text("SELECT DISTINCT keyword FROM user_keywords ORDER BY keyword")).scalars().all()
+        return [str(value).strip() for value in rows if value and str(value).strip()]
+    except Exception:
+        db.rollback()
+        return []
 
 def recent_stats(db: Session, term: str | None = None, top_limit: int = 15) -> dict:
     since = recent_cutoff()
@@ -117,18 +126,8 @@ def recent_stats(db: Session, term: str | None = None, top_limit: int = 15) -> d
         ),
         reverse=True,
     )
-    marica = [row for row in ordered if geographic_scope(row.Article) == "marica"]
-    state_rj = [row for row in ordered if geographic_scope(row.Article) == "estado_rj"]
-    national = [row for row in ordered if geographic_scope(row.Article) == "nacional"]
-    marica_quota = (top_limit + 1) // 2
-    state_quota = top_limit // 2
-    selected = marica[:marica_quota] + state_rj[:state_quota]
-    selected_ids = {row.Article.id for row in selected}
-    remaining = [
-        row for row in marica + state_rj + national
-        if row.Article.id not in selected_ids
-    ]
-    selected.extend(remaining[:max(0, top_limit - len(selected))])
+    # Brasil inteiro é o padrão; recortes regionais pertencem aos filtros da interface.
+    selected = ordered[:top_limit]
     highlights = []
     for article, classification in selected[:top_limit]:
         if classification.risk_score >= 10:
@@ -162,3 +161,26 @@ def recent_stats(db: Session, term: str | None = None, top_limit: int = 15) -> d
 
 def weekly_stats(db: Session, term: str | None = None) -> dict:
     return recent_stats(db, term)
+
+def backfill_journalists(db: Session, limit: int = 50) -> dict:
+    candidates = db.scalars(
+        select(Article)
+        .where(Article.journalist.is_(None))
+        .where(~Article.url.contains("news.google.com"))
+        .order_by(Article.published_at.desc())
+        .limit(limit)
+    ).all()
+    updated = 0
+    for article in candidates:
+        enriched = enrich({
+            "url": article.url,
+            "source": article.source,
+            "body": article.body,
+            "journalist": article.journalist,
+        })
+        if enriched.get("journalist"):
+            article.journalist = enriched["journalist"]
+            updated += 1
+    if updated:
+        db.commit()
+    return {"analisadas": len(candidates), "jornalistas_identificados": updated}

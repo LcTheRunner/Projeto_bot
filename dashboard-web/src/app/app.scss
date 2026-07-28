@@ -90,6 +90,7 @@ header h1 { color: #f6f8ff; }
 
 .report-button { border: 1px solid #6650d8; cursor: pointer; border-radius: 8px; padding: 9px 13px; color: #c8bdff; background: #211b3c; font-weight: 750; white-space: nowrap; }
 .report-button:hover { background: #2b2350; }
+.geography-button { max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
 .report-button:disabled { opacity: .5; cursor: default; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: #030611c7; backdrop-filter: blur(5px); }
 .report-modal { width: min(720px, 100%); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid #303d57; border-radius: 16px; padding: 23px; color: var(--text); background: #101724; box-shadow: 0 28px 90px #0009; }
@@ -111,6 +112,63 @@ header h1 { color: #f6f8ff; }
 .cancel-report { color: #aeb8cc; background: #1a2435; }
 .generate-report { color: white; background: linear-gradient(135deg, #8067f1, #6348df); }
 .generate-report:disabled, .cancel-report:disabled { opacity: .5; cursor: default; }
+.logout-button { border: 0; border-radius: 8px; padding: 9px 11px; color: #9eabc2; background: transparent; cursor: pointer; }
+.report-notes { display: block; margin: 4px 0 18px; }
+.report-notes strong, .report-notes small { display: block; }
+.report-notes strong { font-size: 12px; }
+.report-notes small { margin: 4px 0 8px; color: var(--muted); font-size: 9px; }
+.report-notes textarea { width: 100%; resize: vertical; min-height: 130px; box-sizing: border-box; border: 1px solid #2a354a; border-radius: 9px; padding: 11px; color: var(--text); background: #0d1421; font: 11px/1.55 Inter, sans-serif; outline: none; }
+.report-notes textarea:focus { border-color: #745de0; }
+.report-notes > span { display: block; margin-top: 4px; color: var(--muted); font-size: 8px; text-align: right; }
+.keyword-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin: 18px 0 12px; }
+.keyword-form input { border: 1px solid #2a354a; border-radius: 8px; padding: 10px 11px; color: var(--text); background: #0d1421; outline: none; }
+.keyword-batch-form { grid-template-columns: 1fr; }
+.keyword-batch-form textarea { width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid #2a354a; border-radius: 8px; padding: 10px 11px; color: var(--text); background: #0d1421; outline: none; font: 11px/1.5 Inter, sans-serif; }
+.keyword-help { display: block; margin: -6px 0 12px; color: var(--muted); font-size: 9px; }
+.keyword-success { margin: 0 0 12px; padding: 9px 11px; border-radius: 7px; color: #71dfbd; background: #12372f; font-size: 10px; }
+.keyword-bulk-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 10px 0; color: var(--muted); font-size: 10px; }
+.keyword-bulk-actions label { display: flex; align-items: center; gap: 7px; }
+.keyword-bulk-actions button { border: 1px solid #613449; border-radius: 7px; padding: 7px 9px; color: #ff8297; background: #2b1721; cursor: pointer; font-size: 9px; }
+.keyword-bulk-actions button:disabled { opacity: .45; cursor: default; }
+.keyword-form button, .login-card form > button { border: 0; border-radius: 8px; padding: 10px 15px; color: white; background: linear-gradient(135deg, #8067f1, #6348df); cursor: pointer; font-weight: 750; }
+.keyword-list { display: grid; gap: 7px; max-height: 360px; overflow: auto; }
+.keyword-list > div { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding: 10px 12px; border: 1px solid #263247; border-radius: 8px; background: #0d1421; font-size: 11px; }
+.keyword-list > div > label { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.geography-modal { width: min(620px, 100%); }
+.municipality-search { display: block; margin: 18px 0 12px; }
+.municipality-search span { display: block; margin: 0 0 6px 2px; color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.municipality-search input { width: 100%; box-sizing: border-box; border: 1px solid #2d3a52; border-radius: 8px; padding: 11px; color: var(--text); background: #0b111d; outline: none; }
+.municipality-list { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; max-height: 430px; overflow: auto; padding-right: 4px; }
+.municipality-list button { min-height: 40px; border: 1px solid #29364c; border-radius: 8px; padding: 9px 11px; color: #cbd4e5; background: #0d1421; cursor: pointer; text-align: left; font-size: 10px; }
+.municipality-list button:hover, .municipality-list button.selected { border-color: #765fff; color: white; background: #211b3c; }
+.municipality-list strong, .municipality-list small { display: block; }
+.municipality-list small { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.municipality-option { min-height: 40px; display: flex; align-items: center; gap: 9px; box-sizing: border-box; border: 1px solid #29364c; border-radius: 8px; padding: 9px 11px; color: #cbd4e5; background: #0d1421; cursor: pointer; font-size: 10px; }
+.municipality-option:hover, .municipality-option.selected { border-color: #765fff; color: white; background: #211b3c; }
+.municipality-option input { accent-color: #8067f1; }
+.municipality-option.state-option { grid-column: 1 / -1; }
+.geography-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border); }
+.geography-actions > span { margin-right: auto; color: var(--muted); font-size: 10px; }
+.keyword-list button { border: 0; color: #ff8297; background: transparent; cursor: pointer; font-size: 9px; }
+.account-form { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 18px 0 12px; }
+.account-form input:not([type="checkbox"]) { border: 1px solid #2a354a; border-radius: 8px; padding: 10px 11px; color: var(--text); background: #0d1421; outline: none; }
+.account-form label { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; }
+.account-form button { border: 0; border-radius: 8px; padding: 10px 15px; color: white; background: linear-gradient(135deg, #8067f1, #6348df); cursor: pointer; font-weight: 750; }
+.account-list strong, .account-list small { display: block; }
+.account-list small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.account-list i { color: #51d1a9; font-size: 9px; font-style: normal; }
+.account-list i.inactive { color: #ff8297; }
+.login-page { min-height: 100vh; display: grid; place-items: center; padding: 20px; box-sizing: border-box; background: radial-gradient(circle at 50% 20%, #211b45, #080c16 55%); }
+.login-card { width: min(390px, 100%); padding: 32px; border: 1px solid #29354c; border-radius: 18px; color: var(--text); background: #101724; box-shadow: 0 30px 100px #0009; box-sizing: border-box; }
+.login-card .brand-mark { margin-bottom: 22px; }
+.login-card h1 { margin-top: 6px; }
+.login-card > p:not(.eyebrow) { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.login-card form { display: grid; gap: 14px; margin-top: 24px; }
+.login-card label span { display: block; margin: 0 0 6px 2px; color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.login-card input { width: 100%; box-sizing: border-box; border: 1px solid #2d3a52; border-radius: 8px; padding: 11px; color: var(--text); background: #0b111d; outline: none; }
+.auth-links { display: flex; justify-content: space-between; gap: 12px; }
+.auth-links button { border: 0; padding: 3px 0; color: #a998ff; background: transparent; cursor: pointer; font-size: 10px; }
+.auth-success { margin: 13px 0 0 !important; padding: 9px 11px; border-radius: 7px; color: #71dfbd !important; background: #12372f; }
 
 @media (max-width: 1180px) {
   .filters { display: grid; grid-template-columns: repeat(3, 1fr); }
@@ -121,6 +179,7 @@ header h1 { color: #f6f8ff; }
   .filters { grid-template-columns: 1fr 1fr; }
   .header-actions { flex-wrap: wrap; }
   .report-options { grid-template-columns: 1fr; }
+  .account-form { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {
   .filters { grid-template-columns: 1fr; }

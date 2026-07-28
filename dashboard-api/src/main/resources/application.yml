@@ -1,5 +1,7 @@
 server:
   port: 8080
+  error:
+    include-message: always
 spring:
   application:
     name: media-monitor-dashboard
@@ -10,6 +12,20 @@ spring:
     driver-class-name: org.mariadb.jdbc.Driver
   jackson:
     default-property-inclusion: non_null
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USER:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${SMTP_STARTTLS:true}
+dashboard:
+  admin-user: ${DASHBOARD_USER:equipe}
+  admin-password: ${DASHBOARD_PASSWORD:}
+  session-days: 7
+  public-url: ${DASHBOARD_PUBLIC_URL:http://localhost:4200}
+  mail-from: ${REPORT_FROM:${SMTP_USER:}}
 management:
   endpoints:
     web:

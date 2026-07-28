@@ -1,3 +1,4 @@
+<ng-container *ngIf="user(); else loginView">
 <div class="shell">
   <aside class="sidebar">
     <div class="brand"><span class="brand-mark">M</span><div><strong>Mídia Radar</strong><small>Inteligência reputacional</small></div></div>
@@ -18,9 +19,70 @@
 
   <main>
     <header>
-      <div><p class="eyebrow">CENTRAL DE MONITORAMENTO</p><h1>Panorama de impacto midiático</h1><p>Acompanhe menções, riscos e alcance editorial em uma única visão.</p></div>
-      <div class="header-actions"><span class="updated"><i></i> Atualizado {{ lastUpdate() }}</span><button class="report-button" (click)="openReport()" [disabled]="loading()">PDF Relatório</button><button class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button></div>
+      <div><p class="eyebrow">CENTRAL DE MONITORAMENTO DO MCS</p><h1>Panorama de impacto midiático</h1><p>Acompanhe menções, riscos e alcance editorial em uma única visão.</p></div>
+      <div class="header-actions"><span class="updated"><i></i> {{ user()?.displayName }}</span><button *ngIf="user()?.admin" class="report-button" (click)="openAccounts()">Contas</button><button class="report-button" (click)="openKeywords()">Palavras-chave</button><button class="report-button geography-button" (click)="openGeography()">⌖ {{ geographyLabel() }}</button><button class="report-button" (click)="openReport()" [disabled]="loading()">PDF Relatório</button><button class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button><button class="logout-button" (click)="logout()">Sair</button></div>
     </header>
+
+    <div class="modal-backdrop" *ngIf="accountsOpen()" (click)="closeAccounts()">
+      <section class="report-modal" role="dialog" aria-modal="true" aria-labelledby="accounts-title" (click)="$event.stopPropagation()">
+        <div class="report-modal-head">
+          <div><p class="eyebrow">ADMINISTRAÇÃO</p><h2 id="accounts-title">Contas de acesso</h2><span>Crie um login separado para cada usuário do monitoramento.</span></div>
+          <button class="modal-close" (click)="closeAccounts()" aria-label="Fechar">×</button>
+        </div>
+        <form class="account-form" (ngSubmit)="createAccount()">
+          <input name="accountUsername" [(ngModel)]="accountUsername" maxlength="100" placeholder="Usuário" required>
+          <input name="accountEmail" [(ngModel)]="accountEmail" type="email" maxlength="254" placeholder="E-mail para recuperação" required>
+          <input name="accountPassword" [(ngModel)]="accountPassword" type="password" placeholder="Senha" required>
+          <label><input name="accountAdmin" [(ngModel)]="accountAdmin" type="checkbox"> Administrador</label>
+          <button type="submit">Criar conta</button>
+        </form>
+        <p class="report-error" *ngIf="accountError()">{{ accountError() }}</p>
+        <div class="keyword-list account-list">
+          <div *ngFor="let account of managedUsers()"><span><strong>{{ account.displayName }}</strong><small>{{ account.username }} · {{ account.email || 'e-mail pendente' }} · {{ account.admin ? 'Administrador' : 'Usuário' }}</small></span><i [class.inactive]="!account.active">{{ account.active ? 'Ativa' : 'Inativa' }}</i></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" *ngIf="keywordOpen()" (click)="closeKeywords()">
+      <section class="report-modal keyword-modal" role="dialog" aria-modal="true" aria-labelledby="keyword-title" (click)="$event.stopPropagation()">
+        <div class="report-modal-head">
+          <div><p class="eyebrow">MONITORAMENTO PESSOAL</p><h2 id="keyword-title">Minhas palavras-chave</h2><span>Estas alterações afetam somente a sua conta.</span></div>
+          <button class="modal-close" (click)="closeKeywords()" aria-label="Fechar">×</button>
+        </div>
+        <form class="keyword-form keyword-batch-form" (ngSubmit)="addKeyword()">
+          <textarea name="newKeyword" [(ngModel)]="newKeyword" maxlength="5000" rows="4" placeholder="Cole uma ou várias palavras-chave, separadas por vírgula, ponto, ponto e vírgula, dois-pontos ou aspas."></textarea>
+          <button type="submit">Adicionar todas</button>
+        </form>
+        <small class="keyword-help">Termos repetidos são ignorados automaticamente.</small>
+        <p class="report-error" *ngIf="keywordError()">{{ keywordError() }}</p>
+        <p class="keyword-success" *ngIf="keywordMessage()">{{ keywordMessage() }}</p>
+        <div class="keyword-bulk-actions">
+          <label><input type="checkbox" [checked]="selectedKeywordIds.size === userKeywords().length && userKeywords().length > 0" (change)="toggleAllKeywords($any($event.target).checked)"> Selecionar todas</label>
+          <button type="button" (click)="removeSelectedKeywords()" [disabled]="!selectedKeywordIds.size">Remover selecionadas ({{ selectedKeywordIds.size }})</button>
+        </div>
+        <div class="keyword-list">
+          <div *ngFor="let item of userKeywords()"><label><input type="checkbox" [checked]="keywordSelected(item.id)" (change)="toggleKeyword(item.id, $any($event.target).checked)"><span>{{ item.keyword }}</span></label><button (click)="removeKeyword(item)" title="Remover">Remover</button></div>
+          <p *ngIf="!userKeywords().length" class="empty">Nenhuma palavra-chave cadastrada.</p>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" *ngIf="geographyOpen()" (click)="closeGeography()">
+      <section class="report-modal geography-modal" role="dialog" aria-modal="true" aria-labelledby="geography-title" (click)="$event.stopPropagation()">
+        <div class="report-modal-head">
+          <div><p class="eyebrow">ABRANGÊNCIA</p><h2 id="geography-title">Escolha as localizações</h2><span>Brasil inteiro é o padrão. Selecione todo o estado ou quantos municípios desejar.</span></div>
+          <button class="modal-close" (click)="closeGeography()" aria-label="Fechar">×</button>
+        </div>
+        <label class="municipality-search"><span>Pesquisar município</span><input [(ngModel)]="geographySearch" placeholder="Ex.: Niterói, Maricá, Petrópolis…"></label>
+        <div class="municipality-list">
+          <button type="button" [class.selected]="!draftLocations.size" (click)="selectBrazil()"><strong>Brasil inteiro</strong><small>Todos os estados e municípios</small></button>
+          <label class="municipality-option state-option" [class.selected]="locationChecked('estado_rj')"><input type="checkbox" [checked]="locationChecked('estado_rj')" (change)="toggleLocation('estado_rj', $any($event.target).checked)"><span><strong>Todo o Estado do Rio de Janeiro</strong><small>Capital e todos os 92 municípios</small></span></label>
+          <label class="municipality-option" *ngFor="let municipality of filteredMunicipalities()" [class.selected]="locationChecked(municipality)"><input type="checkbox" [checked]="locationChecked(municipality)" (change)="toggleLocation(municipality, $any($event.target).checked)"><span>{{ municipality }}</span></label>
+          <p class="empty" *ngIf="!filteredMunicipalities().length">Nenhum município encontrado.</p>
+        </div>
+        <div class="geography-actions"><span>{{ draftLocations.size ? draftLocations.size + ' seleção(ões)' : 'Brasil inteiro' }}</span><button type="button" class="cancel-report" (click)="closeGeography()">Cancelar</button><button type="button" class="generate-report" (click)="applyLocations()">Aplicar filtro</button></div>
+      </section>
+    </div>
 
     <div class="modal-backdrop" *ngIf="reportOpen()" (click)="closeReport()">
       <section class="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title" (click)="$event.stopPropagation()">
@@ -36,6 +98,7 @@
           <label><input type="checkbox" [(ngModel)]="reportSections.journalists"><span><strong>Análise de jornalistas</strong><small>Produção, alertas críticos e impacto médio por responsável.</small></span></label>
           <label><input type="checkbox" [(ngModel)]="reportSections.allNews"><span><strong>Todas as notícias</strong><small>Relação integral do período, sem o limite de 100 itens da tela.</small></span></label>
         </div>
+        <label class="report-notes"><strong>Anotações do analista</strong><small>Até três parágrafos; o texto será incluído no PDF.</small><textarea [(ngModel)]="reportNotes" rows="10" maxlength="3000" placeholder="Escreva aqui observações, contexto e recomendações…"></textarea><span>{{ reportNotes.length }}/3000</span></label>
         <p class="report-error" *ngIf="reportError()">{{ reportError() }}</p>
         <div class="report-modal-actions">
           <span>{{ selectedReportSections() }} seções selecionadas</span>
@@ -101,3 +164,58 @@
     </ng-container>
   </main>
 </div>
+</ng-container>
+
+<ng-template #loginView>
+  <main class="login-page">
+    <section class="login-card">
+      <div class="brand-mark">M</div>
+      <p class="eyebrow">CENTRAL DE MONITORAMENTO DO MCS</p>
+      <h1 *ngIf="authMode() === 'login'">Acesse seu monitoramento</h1>
+      <h1 *ngIf="authMode() === 'register'">Crie sua conta</h1>
+      <h1 *ngIf="authMode() === 'verify'">Confirme seu e-mail</h1>
+      <h1 *ngIf="authMode() === 'forgot'">Recupere sua senha</h1>
+      <h1 *ngIf="authMode() === 'reset'">Defina uma nova senha</h1>
+      <p *ngIf="authMode() === 'login'">Cada conta possui suas próprias palavras-chave e configurações.</p>
+      <p *ngIf="authMode() === 'register'">Seu e-mail será usado somente para segurança e recuperação da conta.</p>
+      <p *ngIf="authMode() === 'verify'">Digite o código de 6 dígitos que enviamos. Ele expira em 15 minutos.</p>
+      <p *ngIf="authMode() === 'forgot'">Enviaremos um link de redefinição para o e-mail cadastrado.</p>
+      <p *ngIf="authMode() === 'reset'">Escolha uma senha com pelo menos 8 caracteres.</p>
+      <p class="auth-success" *ngIf="authMessage()">{{ authMessage() }}</p>
+      <form *ngIf="authMode() === 'login'" (ngSubmit)="login()">
+        <label><span>Usuário</span><input name="username" [(ngModel)]="loginUsername" autocomplete="username" required></label>
+        <label><span>Senha</span><input name="password" [(ngModel)]="loginPassword" type="password" autocomplete="current-password" required></label>
+        <p class="report-error" *ngIf="loginError()">{{ loginError() }}</p>
+        <button type="submit" [disabled]="authChecking()">Entrar</button>
+        <div class="auth-links"><button type="button" (click)="showAuth('forgot')">Esqueci minha senha</button><button type="button" (click)="showAuth('register')">Criar uma conta</button></div>
+        <div class="auth-links"><button type="button" (click)="showAuth('verify')">Já recebi meu código</button></div>
+      </form>
+      <form *ngIf="authMode() === 'register'" (ngSubmit)="register()">
+        <label><span>Usuário</span><input name="registerUsername" [(ngModel)]="registerUsername" autocomplete="username" required></label>
+        <label><span>E-mail</span><input name="registerEmail" [(ngModel)]="registerEmail" type="email" autocomplete="email" required></label>
+        <label><span>Senha</span><input name="registerPassword" [(ngModel)]="registerPassword" type="password" autocomplete="new-password" required></label>
+        <p class="report-error" *ngIf="loginError()">{{ loginError() }}</p>
+        <button type="submit">Cadastrar</button>
+        <div class="auth-links"><button type="button" (click)="showAuth('login')">Voltar para o login</button></div>
+      </form>
+      <form *ngIf="authMode() === 'verify'" (ngSubmit)="verifyEmail()">
+        <label><span>Usuário</span><input name="verificationUsername" [(ngModel)]="registerUsername" autocomplete="username" required></label>
+        <label><span>Código de validação</span><input name="verificationCode" [(ngModel)]="verificationCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required></label>
+        <p class="report-error" *ngIf="loginError()">{{ loginError() }}</p>
+        <button type="submit">Confirmar e-mail</button>
+        <div class="auth-links"><button type="button" (click)="resendVerification()">Reenviar código</button><button type="button" (click)="showAuth('login')">Voltar ao login</button></div>
+      </form>
+      <form *ngIf="authMode() === 'forgot'" (ngSubmit)="requestRecovery()">
+        <label><span>E-mail cadastrado</span><input name="recoveryEmail" [(ngModel)]="recoveryEmail" type="email" autocomplete="email" required></label>
+        <p class="report-error" *ngIf="loginError()">{{ loginError() }}</p>
+        <button type="submit">Enviar link de recuperação</button>
+        <div class="auth-links"><button type="button" (click)="showAuth('login')">Voltar para o login</button></div>
+      </form>
+      <form *ngIf="authMode() === 'reset'" (ngSubmit)="resetPassword()">
+        <label><span>Nova senha</span><input name="resetPasswordValue" [(ngModel)]="resetPasswordValue" type="password" autocomplete="new-password" required></label>
+        <p class="report-error" *ngIf="loginError()">{{ loginError() }}</p>
+        <button type="submit">Salvar nova senha</button>
+      </form>
+    </section>
+  </main>
+</ng-template>

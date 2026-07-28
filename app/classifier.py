@@ -42,10 +42,11 @@ def _near_hits(text: str, terms: list[str], contexts: list[str], distance: int =
                 found.extend((term, context))
     return found
 
-def monitored_hits(title: str, body: str, cfg: dict | None = None) -> list[str]:
+def monitored_hits(title: str, body: str, cfg: dict | None = None, extra_terms: list[str] | None = None) -> list[str]:
     cfg = cfg or yaml_config("keywords.yaml")
     text = normalize(f"{title}. {body}")
     found = _hits(text, cfg.get("monitorados", []))
+    found.extend(_hits(text, extra_terms or []))
     for combination in cfg.get("combinacoes_monitoradas", []):
         found.extend(_near_hits(
             text,
@@ -55,13 +56,13 @@ def monitored_hits(title: str, body: str, cfg: dict | None = None) -> list[str]:
         ))
     return sorted(set(found), key=normalize)
 
-def is_relevant(title: str, body: str) -> bool:
-    return bool(monitored_hits(title, body))
+def is_relevant(title: str, body: str, extra_terms: list[str] | None = None) -> bool:
+    return bool(monitored_hits(title, body, extra_terms=extra_terms))
 
-def classify(title: str, body: str, source_weight: float = 1.0) -> Result:
+def classify(title: str, body: str, source_weight: float = 1.0, extra_terms: list[str] | None = None) -> Result:
     cfg = yaml_config("keywords.yaml")
     text = normalize(f"{title}. {body}")
-    monitored = monitored_hits(title, body, cfg)
+    monitored = monitored_hits(title, body, cfg, extra_terms)
     evidence, hits, risk, opportunity, tone = [], [], 0, 0, "neutro"
     if monitored:
         evidence.append(f"monitoramento: {', '.join(monitored)}")

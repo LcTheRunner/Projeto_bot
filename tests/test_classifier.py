@@ -39,3 +39,9 @@ def test_marica_com_esporte_e_relevante():
 
 def test_variacao_lei_rouanet():
     assert is_relevant("Novo edital da Lei Rounet", "Projetos culturais podem participar")
+
+def test_palavra_personalizada_do_usuario():
+    assert not is_relevant("Projeto Venturi anuncia novidades", "Agenda institucional")
+    assert is_relevant("Projeto Venturi anuncia novidades", "Agenda institucional", ["Projeto Venturi"])
+    result = classify("Projeto Venturi anuncia novidades", "Agenda institucional", extra_terms=["Projeto Venturi"])
+    assert "Projeto Venturi" in result.matched_keywords

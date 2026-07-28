@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 from app.database import Base, engine, get_db
 from app.models import Article
-from app.services import collect, recent_cutoff, recent_stats
+from app.services import backfill_journalists, collect, recent_cutoff, recent_stats
 from app.reports import send_report
 
 @asynccontextmanager
@@ -39,3 +39,7 @@ def stats(termo: str | None = None, db: Session = Depends(get_db)): return recen
 
 @app.post("/relatorios/enviar")
 def report(db: Session = Depends(get_db)): return send_report(db)
+
+@app.post("/jornalistas/atualizar")
+def update_journalists(limite: int = Query(50, ge=1, le=200), db: Session = Depends(get_db)):
+    return backfill_journalists(db, limite)

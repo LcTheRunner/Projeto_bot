@@ -1,5 +1,7 @@
 import logging
 import math
+import json
+import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, urlparse
 import feedparser, httpx, trafilatura
@@ -32,6 +34,7 @@ def _feed_items(name: str, url: str, weight: float = 1.0, publisher_from_entry: 
             "source": source,
             "published_at": _date(item.get("published") or item.get("updated")),
             "_source_weight": weight,
+            "journalist": _clean_author(item.get("author") or item.get("dc_creator")),
         })
     return output
 
@@ -41,7 +44,7 @@ def rss_items() -> list[dict]:
         output.extend(_feed_items(source["nome"], source["url"], float(source.get("peso", 1.0))))
     return output
 
-def google_news_items() -> list[dict]:
+def google_news_items(extra_queries: list[str] | None = None) -> list[dict]:
     cfg = yaml_config("sources.yaml").get("google_news", {})
     if not cfg.get("enabled", False):
         return []
@@ -49,7 +52,9 @@ def google_news_items() -> list[dict]:
     hours = int(cfg.get("horas", 72))
     days = math.ceil(hours / 24)
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    for query in cfg.get("queries", []):
+    outlet_queries = [outlet["query"] for outlet in cfg.get("outlets", []) if outlet.get("query")]
+    queries = list(dict.fromkeys([*cfg.get("queries", []), *outlet_queries, *(extra_queries or [])]))[:80]
+    for query in queries:
         params = urlencode({"q": f"{query} when:{days}d", "hl": "pt-BR", "gl": "BR", "ceid": "BR:pt-419"})
         items = _feed_items(
             "Google Notícias",
@@ -102,11 +107,75 @@ def enrich(item: dict) -> dict:
         if extracted:
             item["body"] = f"{item.get('body', '')}\n\n{extracted}".strip()
         soup = BeautifulSoup(html, "html.parser")
-        author = soup.select_one('[rel="author"], [class*="author"], [class*="autor"]')
-        item["journalist"] = author.get_text(" ", strip=True)[:255] if author else None
+        item["journalist"] = _extract_author(soup) or item.get("journalist")
     except Exception:
-        item["journalist"] = None
+        item["journalist"] = item.get("journalist")
     return item
+
+def _extract_author(soup: BeautifulSoup) -> str | None:
+    meta_candidates = [
+        ("name", "author"), ("property", "article:author"), ("name", "byl"),
+        ("name", "parsely-author"), ("itemprop", "author"),
+    ]
+    for attribute, value in meta_candidates:
+        node = soup.find("meta", attrs={attribute: re.compile(f"^{re.escape(value)}$", re.I)})
+        author = _clean_author(node.get("content") if node else None)
+        if author:
+            return author
+    for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
+        try:
+            payload = json.loads(script.string or "")
+            for node in _json_nodes(payload):
+                if not isinstance(node, dict) or "author" not in node:
+                    continue
+                authors = node["author"] if isinstance(node["author"], list) else [node["author"]]
+                names = [_clean_author(author.get("name") if isinstance(author, dict) else author) for author in authors]
+                names = [name for name in names if name]
+                if names:
+                    return ", ".join(names)[:255]
+        except (ValueError, TypeError):
+            pass
+    selectors = [
+        '[rel="author"]', '[itemprop="author"] [itemprop="name"]', '.author-name',
+        '.article-author', '.post-author', '.byline', '[class*="autor"]',
+        '[class*="author"]', '[data-testid*="author"]', '[data-testid*="byline"]',
+    ]
+    for selector in selectors:
+        node = soup.select_one(selector)
+        author = _clean_author(node.get_text(" ", strip=True) if node else None)
+        if author:
+            return author
+    # Alguns veículos exibem a assinatura apenas como texto visível: "Por Redação g1".
+    text = soup.get_text("\n", strip=True)
+    match = re.search(
+        r"(?:^|[|•·\n])\s*por\s+([^|•·\n]{3,120}?)(?=\s+\d{1,2}/\d{1,2}/\d{4}|\s+publicad[oa]|\s+atualizad[oa]|$)",
+        text,
+        re.I,
+    )
+    if match:
+        return _clean_author(match.group(1))
+    return None
+
+def _json_nodes(value):
+    if isinstance(value, list):
+        for item in value:
+            yield from _json_nodes(item)
+    elif isinstance(value, dict):
+        yield value
+        for key in ("@graph", "mainEntity", "itemListElement"):
+            if key in value:
+                yield from _json_nodes(value[key])
+
+def _clean_author(value) -> str | None:
+    if not value:
+        return None
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    text = re.sub(r"^(por|by)\s+", "", text, flags=re.I).strip(" -|")
+    # "Redação g1", por exemplo, é uma assinatura editorial válida e deve ser mantida.
+    rejected = ("redação", "da redação", "editorial", "autor", "author", "equipe")
+    if len(text) < 3 or text.casefold() in rejected:
+        return None
+    return text[:255]
 
 def _date(value):
     try: return dateparser.parse(value)

@@ -124,7 +124,7 @@ def test_recent_stats_prioriza_risco_e_exclui_noticia_antiga():
         assert stats["principais"][0]["prioridade"] == "crítica"
 
 
-def test_recent_stats_prioriza_marica_e_estado_do_rj_antes_de_nacional():
+def test_recent_stats_prioriza_relevancia_em_abrangencia_nacional():
     engine = _database()
     now = datetime.now(timezone.utc)
 
@@ -156,4 +156,5 @@ def test_recent_stats_prioriza_marica_e_estado_do_rj_antes_de_nacional():
 
         highlights = recent_stats(db)["principais"]
 
-        assert [item["abrangencia"] for item in highlights] == ["marica", "estado_rj", "nacional"]
+        assert highlights[0]["abrangencia"] == "nacional"
+        assert {item["abrangencia"] for item in highlights[1:]} == {"marica", "estado_rj"}

@@ -1,0 +1,362 @@
+package br.com.mediamonitor.dashboard;
+
+import jakarta.annotation.PostConstruct;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.MailException;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.util.Base64;
+import java.util.List;
+import java.util.Map;
+
+@Service
+public class AuthService {
+    public record User(long id, String username, String displayName, String email, boolean admin) {}
+    private static final List<String> DEFAULT_KEYWORDS = List.of(
+            "Instituto Carioca", "esporte e lazer", "corrupção", "emenda parlamentar",
+            "emendas parlamentares", "político corrupto", "políticos corruptos",
+            "empresa que investe em ONG", "empresas que investem em ONG",
+            "empresa que investe no meio ambiente", "empresas que investem no meio ambiente",
+            "empresa que investe em esporte", "empresas que investem em esporte",
+            "Lei Rouanet", "Lei Rounet", "lei de incentivo ao esporte", "Prefeitura de Maricá"
+    );
+
+    private final JdbcTemplate jdbc;
+    private final JavaMailSender mailSender;
+    private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(12);
+    private final SecureRandom random = new SecureRandom();
+
+    @Value("${dashboard.admin-user:equipe}") private String adminUser;
+    @Value("${dashboard.admin-password:}") private String adminPassword;
+    @Value("${dashboard.session-days:7}") private int sessionDays;
+    @Value("${dashboard.public-url:http://localhost:4200}") private String publicUrl;
+    @Value("${dashboard.mail-from:}") private String mailFrom;
+    @Value("${spring.mail.host:}") private String mailHost;
+
+    public AuthService(JdbcTemplate jdbc, JavaMailSender mailSender) {
+        this.jdbc = jdbc;
+        this.mailSender = mailSender;
+    }
+
+    @PostConstruct
+    void initialize() {
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS dashboard_users (
+                  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                  username VARCHAR(100) NOT NULL UNIQUE,
+                  display_name VARCHAR(150) NOT NULL,
+                  email VARCHAR(254) NULL UNIQUE,
+                  password_hash VARCHAR(100) NOT NULL,
+                  is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+                  active BOOLEAN NOT NULL DEFAULT TRUE,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+        addColumnIfMissing("dashboard_users", "email",
+                "ALTER TABLE dashboard_users ADD COLUMN email VARCHAR(254) NULL UNIQUE AFTER display_name");
+        addColumnIfMissing("dashboard_users", "email_verified",
+                "ALTER TABLE dashboard_users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT TRUE AFTER email");
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS dashboard_sessions (
+                  token_hash CHAR(64) PRIMARY KEY,
+                  user_id BIGINT NOT NULL,
+                  expires_at DATETIME NOT NULL,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  CONSTRAINT fk_session_user FOREIGN KEY (user_id) REFERENCES dashboard_users(id) ON DELETE CASCADE
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS user_keywords (
+                  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                  user_id BIGINT NOT NULL,
+                  keyword VARCHAR(255) NOT NULL,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  CONSTRAINT fk_keyword_user FOREIGN KEY (user_id) REFERENCES dashboard_users(id) ON DELETE CASCADE,
+                  UNIQUE KEY uq_user_keyword (user_id, keyword)
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                  token_hash CHAR(64) PRIMARY KEY,
+                  user_id BIGINT NOT NULL,
+                  expires_at DATETIME NOT NULL,
+                  used_at DATETIME NULL,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  CONSTRAINT fk_reset_user FOREIGN KEY (user_id) REFERENCES dashboard_users(id) ON DELETE CASCADE
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS email_verification_codes (
+                  user_id BIGINT PRIMARY KEY,
+                  code_hash CHAR(64) NOT NULL,
+                  expires_at DATETIME NOT NULL,
+                  attempts INT NOT NULL DEFAULT 0,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  CONSTRAINT fk_verification_user FOREIGN KEY (user_id) REFERENCES dashboard_users(id) ON DELETE CASCADE
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS system_migrations (
+                  migration_key VARCHAR(100) PRIMARY KEY,
+                  applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """);
+        Integer users = jdbc.queryForObject("SELECT COUNT(*) FROM dashboard_users", Integer.class);
+        if (users != null && users == 0 && adminPassword != null && !adminPassword.isBlank()) {
+            jdbc.update("""
+                    INSERT INTO dashboard_users(username, display_name, password_hash, is_admin)
+                    VALUES (?, ?, ?, TRUE)
+                    """, cleanUsername(adminUser), "Administrador MCS", encoder.encode(adminPassword));
+            Long userId = jdbc.queryForObject("SELECT id FROM dashboard_users WHERE username = ?", Long.class, cleanUsername(adminUser));
+            seedKeywords(userId);
+        }
+        jdbc.update("DELETE FROM dashboard_sessions WHERE expires_at < NOW()");
+        jdbc.update("DELETE FROM password_reset_tokens WHERE expires_at < NOW() OR used_at IS NOT NULL");
+        Integer defaultsApplied = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM system_migrations WHERE migration_key = 'default_keywords_v2'", Integer.class);
+        if (defaultsApplied != null && defaultsApplied == 0) {
+            jdbc.queryForList("SELECT id FROM dashboard_users", Long.class).forEach(this::seedKeywords);
+            jdbc.update("INSERT INTO system_migrations(migration_key) VALUES ('default_keywords_v2')");
+        }
+    }
+
+    public String login(String username, String password) {
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT id, password_hash, email_verified FROM dashboard_users
+                WHERE username = ? AND active = TRUE
+                """, cleanUsername(username));
+        if (rows.isEmpty() || !encoder.matches(password == null ? "" : password, (String) rows.getFirst().get("password_hash"))) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Usuário ou senha inválidos");
+        }
+        if (!Boolean.TRUE.equals(rows.getFirst().get("email_verified"))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Confirme o código enviado ao seu e-mail antes de entrar");
+        }
+        long userId = ((Number) rows.getFirst().get("id")).longValue();
+        String token = randomToken();
+        jdbc.update("INSERT INTO dashboard_sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+                hash(token), userId, Timestamp.valueOf(LocalDateTime.now().plusDays(sessionDays)));
+        return token;
+    }
+
+    public User requireUser(HttpServletRequest request) {
+        String token = cookie(request, "mcs_session");
+        if (token == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Autenticação necessária");
+        List<User> rows = jdbc.query("""
+                SELECT u.id, u.username, u.display_name, u.email, u.is_admin
+                FROM dashboard_sessions s JOIN dashboard_users u ON u.id = s.user_id
+                WHERE s.token_hash = ? AND s.expires_at > NOW() AND u.active = TRUE
+                """, (rs, i) -> new User(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getBoolean(5)), hash(token));
+        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sessão expirada");
+        return rows.getFirst();
+    }
+
+    public void logout(HttpServletRequest request) {
+        String token = cookie(request, "mcs_session");
+        if (token != null) jdbc.update("DELETE FROM dashboard_sessions WHERE token_hash = ?", hash(token));
+    }
+
+    public List<Map<String, Object>> users(User actor) {
+        requireAdmin(actor);
+        return jdbc.queryForList("""
+                SELECT id, username, display_name AS displayName, email, is_admin AS admin, active
+                FROM dashboard_users ORDER BY display_name
+                """);
+    }
+
+    public long createUser(User actor, String username, String displayName, String email, String password, boolean admin) {
+        requireAdmin(actor);
+        return createUserInternal(username, displayName, email, password, admin);
+    }
+
+    public long register(String username, String displayName, String email, String password) {
+        long userId = createUserInternal(username, username, email, password, false, false);
+        sendVerificationCode(userId);
+        return userId;
+    }
+
+    private long createUserInternal(String username, String displayName, String email, String password, boolean admin) {
+        return createUserInternal(username, displayName, email, password, admin, true);
+    }
+
+    private long createUserInternal(String username, String displayName, String email, String password, boolean admin, boolean verified) {
+        String cleanUser = cleanUsername(username);
+        String cleanEmail = cleanEmail(email);
+        if (!cleanUser.matches("[a-z0-9._-]{3,50}") || !cleanEmail.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
+                || password == null || password.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Preencha um usuário válido, um e-mail válido e uma senha");
+        }
+        try {
+            jdbc.update("""
+                    INSERT INTO dashboard_users(username, display_name, email, email_verified, password_hash, is_admin)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """, cleanUser, cleanUser, cleanEmail, verified, encoder.encode(password), admin);
+        } catch (DuplicateKeyException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Usuário ou e-mail já cadastrado");
+        }
+        Long userId = jdbc.queryForObject("SELECT id FROM dashboard_users WHERE username = ?", Long.class, cleanUser);
+        seedKeywords(userId);
+        return userId;
+    }
+
+    public void resendVerification(String username) {
+        List<Long> users = jdbc.query("""
+                SELECT id FROM dashboard_users WHERE username = ? AND active = TRUE AND email_verified = FALSE
+                """, (rs, row) -> rs.getLong(1), cleanUsername(username));
+        if (!users.isEmpty()) sendVerificationCode(users.getFirst());
+    }
+
+    public void verifyEmail(String username, String code) {
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT v.user_id, v.code_hash, v.attempts
+                FROM email_verification_codes v
+                JOIN dashboard_users u ON u.id = v.user_id
+                WHERE u.username = ? AND v.expires_at > NOW()
+                """, cleanUsername(username));
+        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Código expirado. Solicite um novo código");
+        Map<String, Object> row = rows.getFirst();
+        long userId = ((Number) row.get("user_id")).longValue();
+        if (((Number) row.get("attempts")).intValue() >= 5) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Muitas tentativas. Solicite um novo código");
+        }
+        if (code == null || !hash(code.trim()).equals(row.get("code_hash"))) {
+            jdbc.update("UPDATE email_verification_codes SET attempts = attempts + 1 WHERE user_id = ?", userId);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Código incorreto");
+        }
+        jdbc.update("UPDATE dashboard_users SET email_verified = TRUE WHERE id = ?", userId);
+        jdbc.update("DELETE FROM email_verification_codes WHERE user_id = ?", userId);
+    }
+
+    private void sendVerificationCode(long userId) {
+        requireMailConfigured();
+        Map<String, Object> user = jdbc.queryForMap("SELECT email FROM dashboard_users WHERE id = ?", userId);
+        String code = String.format("%06d", random.nextInt(1_000_000));
+        jdbc.update("""
+                INSERT INTO email_verification_codes(user_id, code_hash, expires_at, attempts)
+                VALUES (?, ?, ?, 0)
+                ON DUPLICATE KEY UPDATE code_hash = VALUES(code_hash), expires_at = VALUES(expires_at), attempts = 0
+                """, userId, hash(code), Timestamp.valueOf(LocalDateTime.now().plusMinutes(15)));
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(mailFrom);
+        message.setTo((String) user.get("email"));
+        message.setSubject("Código de validação — Central de Monitoramento do MCS");
+        message.setText("""
+                Seu código de validação é:
+
+                %s
+
+                O código expira em 15 minutos. Se você não criou esta conta, ignore este e-mail.
+                """.formatted(code));
+        sendMail(message);
+    }
+
+    public void requestPasswordReset(String email) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT id, email FROM dashboard_users WHERE email = ? AND active = TRUE", cleanEmail(email));
+        if (rows.isEmpty()) return;
+        requireMailConfigured();
+        long userId = ((Number) rows.getFirst().get("id")).longValue();
+        String token = randomToken();
+        jdbc.update("DELETE FROM password_reset_tokens WHERE user_id = ?", userId);
+        jdbc.update("INSERT INTO password_reset_tokens(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+                hash(token), userId, Timestamp.valueOf(LocalDateTime.now().plusMinutes(30)));
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(mailFrom);
+        message.setTo((String) rows.getFirst().get("email"));
+        message.setSubject("Redefinição de senha — Central de Monitoramento do MCS");
+        message.setText("""
+                Recebemos uma solicitação para redefinir sua senha.
+
+                Acesse o link abaixo em até 30 minutos:
+                %s/?reset=%s
+
+                Se você não solicitou esta alteração, ignore este e-mail.
+                """.formatted(publicUrl.replaceAll("/+$", ""), URLEncoder.encode(token, StandardCharsets.UTF_8)));
+        sendMail(message);
+    }
+
+    public void resetPassword(String token, String password) {
+        if (token == null || token.isBlank() || password == null || password.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Link ou senha inválidos");
+        }
+        List<Long> users = jdbc.query("""
+                SELECT user_id FROM password_reset_tokens
+                WHERE token_hash = ? AND expires_at > NOW() AND used_at IS NULL
+                """, (rs, row) -> rs.getLong(1), hash(token));
+        if (users.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Link inválido ou expirado");
+        long userId = users.getFirst();
+        jdbc.update("UPDATE dashboard_users SET password_hash = ? WHERE id = ?", encoder.encode(password), userId);
+        jdbc.update("UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = ?", hash(token));
+        jdbc.update("DELETE FROM dashboard_sessions WHERE user_id = ?", userId);
+    }
+
+    private void requireAdmin(User user) {
+        if (!user.admin()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acesso administrativo necessário");
+    }
+
+    private void requireMailConfigured() {
+        if (mailHost == null || mailHost.isBlank() || mailFrom == null || mailFrom.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "O envio de e-mail ainda não está configurado");
+        }
+    }
+
+    private void sendMail(SimpleMailMessage message) {
+        try {
+            mailSender.send(message);
+        } catch (MailException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Não conseguimos enviar o e-mail agora. Tente novamente");
+        }
+    }
+
+    private void seedKeywords(Long userId) {
+        if (userId == null) return;
+        DEFAULT_KEYWORDS.forEach(keyword ->
+                jdbc.update("INSERT IGNORE INTO user_keywords(user_id, keyword) VALUES (?, ?)", userId, keyword));
+    }
+
+    private void addColumnIfMissing(String table, String column, String ddl) {
+        Integer count = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+                """, Integer.class, table, column);
+        if (count != null && count == 0) jdbc.execute(ddl);
+    }
+
+    private String cleanUsername(String value) { return value == null ? "" : value.trim().toLowerCase(); }
+    private String cleanEmail(String value) { return value == null ? "" : value.trim().toLowerCase(); }
+
+    private String randomToken() {
+        byte[] bytes = new byte[32];
+        random.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private String hash(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (Exception exception) {
+            throw new IllegalStateException(exception);
+        }
+    }
+
+    private String cookie(HttpServletRequest request, String name) {
+        if (request.getCookies() == null) return null;
+        for (Cookie cookie : request.getCookies()) if (name.equals(cookie.getName())) return cookie.getValue();
+        return null;
+    }
+}

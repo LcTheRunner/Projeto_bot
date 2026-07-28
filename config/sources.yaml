@@ -32,6 +32,38 @@ google_news:
     - '(empresa OR empresas) (investimento OR patrocínio) (ONG OR "meio ambiente" OR esporte)'
     - '"Lei Rouanet" OR "Lei Rounet" OR "lei de incentivo ao esporte"'
     - 'Maricá (prefeitura OR esporte OR lazer OR edital)'
+  # Veículos nacionais acompanhados. As consultas por domínio complementam
+  # os RSS diretos e continuam passando pelas palavras-chave de cada usuário.
+  outlets:
+    - {nome: Folha de S.Paulo, query: "site:folha.uol.com.br"}
+    - {nome: O Globo, query: "site:oglobo.globo.com"}
+    - {nome: O Estado de S. Paulo, query: "site:estadao.com.br"}
+    - {nome: O Dia, query: "site:odia.ig.com.br"}
+    - {nome: Extra, query: "site:extra.globo.com"}
+    - {nome: Grupo Globo, query: "site:g1.globo.com OR site:globoplay.globo.com"}
+    - {nome: GloboNews, query: "site:g1.globo.com/globonews"}
+    - {nome: SporTV, query: "site:ge.globo.com OR site:sportv.globo.com"}
+    - {nome: Record, query: "site:r7.com OR site:record.r7.com"}
+    - {nome: SBT, query: "site:sbtnews.sbt.com.br"}
+    - {nome: Band, query: "site:band.com.br OR site:band.uol.com.br"}
+    - {nome: RedeTV!, query: "site:redetv.uol.com.br"}
+    - {nome: TV Cultura, query: "site:tvcultura.com.br"}
+    - {nome: Valor Econômico, query: "site:valor.globo.com"}
+    - {nome: Correio Braziliense, query: "site:correiobraziliense.com.br"}
+    - {nome: Zero Hora, query: "site:gauchazh.clicrbs.com.br"}
+    - {nome: Veja, query: "site:veja.abril.com.br"}
+    - {nome: Época Negócios, query: "site:epocanegocios.globo.com"}
+    - {nome: Exame, query: "site:exame.com"}
+    - {nome: CartaCapital, query: "site:cartacapital.com.br"}
+    - {nome: UOL Notícias, query: "site:noticias.uol.com.br"}
+    - {nome: R7, query: "site:r7.com"}
+    - {nome: Terra, query: "site:terra.com.br/noticias"}
+    - {nome: CBN, query: "site:cbn.globo.com"}
+    - {nome: Jovem Pan News, query: "site:jovempan.com.br"}
+    - {nome: BandNews FM, query: "site:band.com.br/radio/bandnews-fm"}
+    - {nome: Rádio Itatiaia, query: "site:itatiaia.com.br"}
+    - {nome: Rádio Gaúcha, query: "site:gauchazh.clicrbs.com.br"}
+    - {nome: Rádio Nacional, query: "site:radios.ebc.com.br OR site:agenciabrasil.ebc.com.br"}
 
 # Busca complementar pela Google Programmable Search API.
 google:
