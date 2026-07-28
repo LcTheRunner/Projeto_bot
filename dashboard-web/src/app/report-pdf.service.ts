@@ -146,7 +146,8 @@ export class ReportPdfService {
       title('Análise por jornalista responsável');
       const grouped = new Map<string, { total: number; critical: number; impact: number }>();
       for (const article of data.articles) {
-        const journalist = article.journalist?.trim() || 'Autor não identificado';
+        const journalist = article.journalist?.trim();
+        if (!journalist) continue;
         const item = grouped.get(journalist) ?? { total: 0, critical: 0, impact: 0 };
         item.total++;
         item.critical += article.risk === 10 ? 1 : 0;
@@ -186,7 +187,7 @@ export class ReportPdfService {
       body: articles.map(article => [
         this.date(article.publishedAt),
         `${article.title}\nTermos: ${article.keywords.join(', ') || '—'}`,
-        `${article.source}\n${article.journalist?.trim() || 'Autor não identificado'}`,
+        article.journalist?.trim() ? `${article.source}\n${article.journalist.trim()}` : article.source,
         article.risk,
         article.impact.toFixed(1)
       ]),
