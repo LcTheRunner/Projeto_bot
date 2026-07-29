@@ -43,8 +43,14 @@ o e-mail cadastrado. Configure o SMTP e defina
 `DASHBOARD_PUBLIC_URL=https://news.venturi.vps-kinghost.net` no `.env` de
 produção para o link apontar ao endereço público correto.
 
-O relatório PDF aceita seções personalizadas e até três parágrafos de anotações
-do analista.
+O relatório PDF aceita seções personalizadas e até três parágrafos de
+**Parecer Técnico**.
+
+Cada usuário também pode abrir **Envios por e-mail** no menu, escolher data,
+horário, risco e um conjunto de palavras-chave e programar até dois boletins
+ativos. O destino é sempre o e-mail verificado da própria conta. O worker
+atualiza a coleta até 20 minutos antes do horário e envia um resumo editorial
+com no máximo seis notícias das últimas 24 horas que correspondam ao recorte.
 
 ## Como funciona
 

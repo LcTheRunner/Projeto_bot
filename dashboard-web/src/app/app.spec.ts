@@ -16,7 +16,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     const http = TestBed.inject(HttpTestingController);
-    http.expectOne('/auth-api/me').flush({ id: 1, username: 'equipe', displayName: 'Administrador MCS', admin: true });
+    http.expectOne('/auth-api/me').flush({ id: 1, username: 'equipe', displayName: 'Administrador MCS', email: 'equipe@example.com', admin: true });
     http.expectOne('/dashboard-api/filters').flush({ sources: [], sections: [], risks: [0, 5, 10], keywords: [], tones: [], municipalities: [] });
     http.expectOne(request => request.url === '/dashboard-api/overview').flush({
       periodDays: 7, generatedAt: new Date().toISOString(),
@@ -40,6 +40,16 @@ describe('App', () => {
     expect(fixture.componentInstance.page()).toBe('news');
     expect((fixture.nativeElement as HTMLElement).querySelector('h1')?.textContent).toContain('Notícias monitoradas');
     expect((fixture.nativeElement as HTMLElement).querySelector('.articles')).toBeTruthy();
+
+    const scheduleLink = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('.sidebar a[href="/envios"]');
+    scheduleLink?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    http.expectOne('/dashboard-api/keywords').flush([{ id: 1, keyword: 'corrupção' }]);
+    http.expectOne('/dashboard-api/email-schedules').flush([]);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.page()).toBe('schedules');
+    expect((fixture.nativeElement as HTMLElement).querySelector('h1')?.textContent).toContain('Envios programados');
+    expect((fixture.nativeElement as HTMLElement).querySelector('.schedule-email')?.textContent).toContain('equipe@example.com');
+    expect((fixture.nativeElement as HTMLElement).querySelector('input[name="scheduleDate"]')).toBeTruthy();
     http.verify();
   });
 

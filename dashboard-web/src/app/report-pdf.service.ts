@@ -102,7 +102,7 @@ export class ReportPdfService {
     const notes = context.notes?.trim();
     if (notes) {
       y += 2;
-      this.sectionTitle(doc, 'Nota do analista', margin, y);
+      this.sectionTitle(doc, 'Parecer Técnico', margin, y);
       y += 6;
       doc.setFillColor(249, 247, 255);
       doc.setDrawColor(226, 220, 249);

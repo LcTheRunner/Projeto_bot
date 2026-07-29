@@ -75,10 +75,17 @@ def save_item(db: Session, item: dict, user_keywords: list[str] | None = None) -
     db.add(article); db.commit(); db.refresh(article)
     return article
 
-def collect(db: Session) -> dict:
+def collect(db: Session, extra_keywords: list[str] | None = None) -> dict:
     removed = prune_expired(db)
     sources = yaml_config("sources.yaml")
     user_keywords = _user_keywords(db)
+    known = {normalize(value) for value in user_keywords}
+    for value in extra_keywords or []:
+        clean = str(value).strip()
+        normalized = normalize(clean)
+        if clean and normalized not in known:
+            user_keywords.append(clean)
+            known.add(normalized)
     items = rss_items() + google_news_items(user_keywords)
     if sources.get("google", {}).get("enabled", False):
         for query in sources.get("google", {}).get("queries", []): items += google_items(query)
@@ -105,11 +112,26 @@ def _user_keywords(db: Session) -> list[str]:
         db.rollback()
         return []
 
-def recent_stats(db: Session, term: str | None = None, top_limit: int = 15) -> dict:
-    since = recent_cutoff()
+def recent_stats(
+    db: Session,
+    term: str | None = None,
+    top_limit: int = 15,
+    terms: list[str] | None = None,
+    risk: int | None = None,
+    hours: int = NEWS_WINDOW_HOURS,
+) -> dict:
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
     rows = db.execute(select(Article, Classification).join(Classification).where(Article.published_at >= since)).all()
     if term:
-        needle = term.casefold(); rows = [r for r in rows if needle in (r.Article.title + " " + r.Article.body).casefold()]
+        terms = [term]
+    if terms:
+        needles = [normalize(value) for value in terms if value and value.strip()]
+        rows = [
+            row for row in rows
+            if any(needle in normalize(f"{row.Article.title} {row.Article.body}") for needle in needles)
+        ]
+    if risk is not None:
+        rows = [row for row in rows if row.Classification.risk_score == risk]
     def count(field):
         out = {}
         for a, _ in rows:
@@ -140,6 +162,7 @@ def recent_stats(db: Session, term: str | None = None, top_limit: int = 15) -> d
             "titulo": article.title,
             "url": article.url,
             "veiculo": article.source,
+            "jornalista": article.journalist,
             "editoria": article.section,
             "publicada_em": article.published_at,
             "risco": classification.risk_score,
@@ -149,7 +172,7 @@ def recent_stats(db: Session, term: str | None = None, top_limit: int = 15) -> d
             "palavras": json.loads(classification.matched_keywords),
         })
     return {
-        "periodo_horas": NEWS_WINDOW_HOURS,
+        "periodo_horas": hours,
         "termo": term,
         "total": len(rows),
         "por_veiculo": count("source"),

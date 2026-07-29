@@ -4,10 +4,12 @@ from datetime import datetime, timezone
 from email.message import EmailMessage
 from html import escape
 from zoneinfo import ZoneInfo
+
 from app.config import settings
 from app.services import recent_stats
 
 LOCAL_TZ = ZoneInfo("America/Sao_Paulo")
+EMAIL_NEWS_LIMIT = 6
 SECTION_LABELS = {
     "marica_esporte": "Maricá e esporte",
     "instituto_carioca": "Instituto Carioca",
@@ -19,11 +21,7 @@ SECTION_LABELS = {
     "esporte_lazer": "Esporte e lazer",
     "nao_identificada": "Outros temas monitorados",
 }
-SCOPE_LABELS = {
-    "marica": "Maricá",
-    "estado_rj": "Estado do RJ",
-    "nacional": "Nacional",
-}
+
 
 def parse_recipients(value: str) -> list[str]:
     recipients = []
@@ -33,114 +31,149 @@ def parse_recipients(value: str) -> list[str]:
             recipients.append(normalized)
     return recipients
 
+
 def _date(value: datetime) -> str:
     aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     return aware.astimezone(LOCAL_TZ).strftime("%d/%m/%Y às %H:%M")
 
+
 def _label(value: str) -> str:
     return SECTION_LABELS.get(value, value.replace("_", " ").title())
 
-def _summary_rows(data: dict, labels: bool = False, limit: int | None = None) -> str:
-    entries = list(data.items())[:limit]
-    if not entries:
-        return '<tr><td style="padding:10px;color:#64748b">Sem dados</td><td></td></tr>'
-    return "".join(
-        '<tr>'
-        f'<td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#334155">{escape(_label(str(key)) if labels else str(key))}</td>'
-        f'<td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;color:#0f172a">{value}</td>'
-        '</tr>'
-        for key, value in entries
-    )
 
-def _highlight_card(item: dict) -> str:
-    colors = {"crítica": ("#fee2e2", "#b91c1c"), "alta": ("#ffedd5", "#c2410c"), "relevante": ("#dbeafe", "#1d4ed8")}
-    background, foreground = colors[item["prioridade"]]
-    keywords = ", ".join(item["palavras"][:6]) or "tema monitorado"
+def _filter_label(terms: list[str] | None, risk: int | None) -> str:
+    pieces = []
+    if terms:
+        pieces.append(f"{len(terms)} palavra{'s' if len(terms) != 1 else ''}-chave")
+    pieces.append("todos os riscos" if risk is None else f"risco {risk}")
+    return " · ".join(pieces)
+
+
+def _story(item: dict, index: int) -> str:
+    risk_color = "#b42318" if item["risco"] == 10 else "#b54708" if item["risco"] == 5 else "#157f64"
+    journalist = f" · {escape(item['jornalista'])}" if item.get("jornalista") else ""
     return f"""
-    <tr><td style="padding:0 0 14px">
-      <table role="presentation" width="100%" style="border:1px solid #e2e8f0;border-radius:10px;background:#ffffff">
-        <tr><td style="padding:18px">
-          <span style="display:inline-block;padding:4px 9px;border-radius:999px;background:#dcfce7;color:#166534;font-size:11px;font-weight:700;text-transform:uppercase">{escape(SCOPE_LABELS[item['abrangencia']])}</span>
-          <span style="display:inline-block;margin-left:5px;padding:4px 9px;border-radius:999px;background:{background};color:{foreground};font-size:11px;font-weight:700;text-transform:uppercase">Prioridade {escape(item['prioridade'])}</span>
-          <h3 style="margin:10px 0 7px;font-size:17px;line-height:1.35;color:#0f172a">
-            <a href="{escape(item['url'], quote=True)}" style="color:#0f172a;text-decoration:none">{escape(item['titulo'])}</a>
-          </h3>
-          <p style="margin:0 0 6px;color:#475569;font-size:13px">{escape(item['veiculo'])} · {escape(_label(item['editoria']))} · {_date(item['publicada_em'])}</p>
-          <p style="margin:0 0 14px;color:#64748b;font-size:12px">Risco {item['risco']} · Impacto {item['impacto']} · {escape(keywords)}</p>
-          <a href="{escape(item['url'], quote=True)}" style="display:inline-block;padding:9px 14px;border-radius:7px;background:#1d4ed8;color:#ffffff;text-decoration:none;font-size:13px;font-weight:700">Abrir notícia</a>
-        </td></tr>
-      </table>
-    </td></tr>"""
+      <tr><td style="padding:0 0 20px">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-top:1px solid #d9d6ce">
+          <tr>
+            <td width="38" valign="top" style="padding:18px 12px 0 0;color:#9a958a;font:700 12px Georgia,serif">{index:02d}</td>
+            <td valign="top" style="padding:16px 0 0">
+              <p style="margin:0 0 6px;color:{risk_color};font:700 10px Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase">Risco {item['risco']} · impacto {item['impacto']:.1f}</p>
+              <h2 style="margin:0 0 7px;font:700 19px/1.28 Georgia,serif">
+                <a href="{escape(item['url'], quote=True)}" style="color:#18201f;text-decoration:none">{escape(item['titulo'])}</a>
+              </h2>
+              <p style="margin:0;color:#66645f;font:12px/1.5 Arial,sans-serif">{escape(item['veiculo'])}{journalist} · {_date(item['publicada_em'])}</p>
+            </td>
+          </tr>
+        </table>
+      </td></tr>"""
 
-def render_report(db) -> str:
-    stats = recent_stats(db)
-    highlights = "".join(_highlight_card(item) for item in stats["principais"])
-    if not highlights:
-        highlights = '<tr><td style="padding:18px;background:#fff;border-radius:10px;color:#64748b">Nenhuma notícia relevante nas últimas 72 horas.</td></tr>'
-    generated_at = datetime.now(LOCAL_TZ).strftime("%d/%m/%Y às %H:%M")
+
+def report_data(db, terms: list[str] | None = None, risk: int | None = None, hours: int = 72) -> dict:
+    return recent_stats(db, top_limit=EMAIL_NEWS_LIMIT, terms=terms, risk=risk, hours=hours)
+
+
+def render_report(
+    db,
+    terms: list[str] | None = None,
+    risk: int | None = None,
+    recipient_name: str | None = None,
+    hours: int = 72,
+) -> str:
+    stats = report_data(db, terms, risk, hours)
+    stories = "".join(_story(item, index) for index, item in enumerate(stats["principais"], 1))
+    if not stories:
+        stories = """
+          <tr><td style="padding:26px;border:1px solid #d9d6ce;background:#fff;color:#66645f;font:14px/1.5 Arial,sans-serif">
+            Nenhuma notícia correspondeu aos filtros deste envio.
+          </td></tr>"""
+    greeting = f"Olá, {escape(recipient_name)}." if recipient_name else "Boletim programado"
+    generated_at = datetime.now(LOCAL_TZ).strftime("%d/%m/%Y · %H:%M")
     return f"""<!doctype html>
-<html><body style="margin:0;background:#f1f5f9;font-family:Arial,sans-serif;color:#0f172a">
-<div style="display:none;max-height:0;overflow:hidden">Resumo das notícias monitoradas nas últimas 72 horas.</div>
-<table role="presentation" width="100%" style="background:#f1f5f9"><tr><td align="center" style="padding:24px 12px">
-<table role="presentation" width="100%" style="max-width:720px">
-  <tr><td style="padding:28px;border-radius:14px 14px 0 0;background:#0f172a;color:#fff">
-    <p style="margin:0 0 7px;color:#93c5fd;font-size:12px;font-weight:700;text-transform:uppercase">Monitoramento midiático</p>
-    <h1 style="margin:0;font-size:28px">Notícias das últimas 72 horas</h1>
-    <p style="margin:9px 0 0;color:#cbd5e1;font-size:14px">Atualizado em {generated_at}</p>
+<html lang="pt-BR"><body style="margin:0;background:#eceae4;color:#18201f">
+<div style="display:none;max-height:0;overflow:hidden">Seu recorte de monitoramento está pronto.</div>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eceae4">
+  <tr><td align="center" style="padding:24px 10px">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#f8f7f3;border:1px solid #d7d3c9">
+      <tr><td style="padding:28px 30px 24px;border-top:5px solid #24473f">
+        <table role="presentation" width="100%"><tr>
+          <td><p style="margin:0;color:#24473f;font:700 11px Arial,sans-serif;letter-spacing:.15em;text-transform:uppercase">MCS · Radar de mídia</p></td>
+          <td align="right" style="color:#77736b;font:11px Arial,sans-serif">{generated_at}</td>
+        </tr></table>
+        <h1 style="margin:22px 0 7px;font:700 32px/1.05 Georgia,serif;color:#18201f">O que merece atenção hoje</h1>
+        <p style="margin:0;color:#66645f;font:14px/1.55 Arial,sans-serif">{greeting} Selecionamos até {EMAIL_NEWS_LIMIT} notícias recentes para uma leitura rápida e útil.</p>
+      </td></tr>
+      <tr><td style="padding:0 30px 24px">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#e7eee9;border-left:3px solid #24473f">
+          <tr>
+            <td style="padding:15px"><strong style="display:block;color:#24473f;font:700 22px Georgia,serif">{stats['total']}</strong><span style="color:#5f6864;font:11px Arial,sans-serif">notícias encontradas nas últimas {hours}h</span></td>
+            <td style="padding:15px"><strong style="display:block;color:#9f2d25;font:700 22px Georgia,serif">{stats['por_risco'].get('10', 0)}</strong><span style="color:#5f6864;font:11px Arial,sans-serif">alertas de risco crítico</span></td>
+          </tr>
+        </table>
+        <p style="margin:12px 0 0;color:#77736b;font:11px Arial,sans-serif">Recorte: {escape(_filter_label(terms, risk))}</p>
+      </td></tr>
+      <tr><td style="padding:0 30px 10px"><table role="presentation" width="100%">{stories}</table></td></tr>
+      <tr><td style="padding:20px 30px;background:#24473f;color:#dbe5e0;font:11px/1.5 Arial,sans-serif;text-align:center">
+        Envio automático da Central de Monitoramento do MCS<br>
+        Ajuste ou cancele seus horários no painel.
+      </td></tr>
+    </table>
   </td></tr>
-  <tr><td style="padding:22px;background:#ffffff">
-    <table role="presentation" width="100%"><tr>
-      <td width="50%" style="padding:16px;border-radius:10px;background:#eff6ff"><div style="font-size:28px;font-weight:800;color:#1d4ed8">{stats['total']}</div><div style="font-size:13px;color:#475569">notícias relevantes</div></td>
-      <td width="4%"></td>
-      <td width="46%" style="padding:16px;border-radius:10px;background:#fef2f2"><div style="font-size:28px;font-weight:800;color:#b91c1c">{stats['por_risco'].get('10', 0)}</div><div style="font-size:13px;color:#475569">notícias de risco crítico</div></td>
-    </tr></table>
-    <h2 style="margin:26px 0 12px;font-size:19px">Distribuição do monitoramento</h2>
-    <table role="presentation" width="100%"><tr>
-      <td width="52%" valign="top"><table role="presentation" width="100%">{_summary_rows(stats['por_editoria'], labels=True)}</table></td>
-      <td width="4%"></td>
-      <td width="44%" valign="top"><table role="presentation" width="100%">{_summary_rows(stats['por_veiculo'], limit=7)}</table></td>
-    </tr></table>
-  </td></tr>
-  <tr><td style="padding:24px 22px;background:#e2e8f0">
-    <h2 style="margin:0 0 5px;font-size:21px">Notícias mais importantes</h2>
-    <p style="margin:0 0 16px;color:#475569;font-size:13px">Maricá e Estado do Rio de Janeiro em primeiro lugar; depois risco, impacto e recência.</p>
-    <table role="presentation" width="100%">{highlights}</table>
-  </td></tr>
-  <tr><td style="padding:18px 24px;border-radius:0 0 14px 14px;background:#0f172a;color:#94a3b8;font-size:12px;text-align:center">Relatório automático · Janela móvel de 72 horas</td></tr>
-</table></td></tr></table></body></html>"""
+</table></body></html>"""
 
-def render_text_report(db) -> str:
-    stats = recent_stats(db)
+
+def render_text_report(
+    db,
+    terms: list[str] | None = None,
+    risk: int | None = None,
+    recipient_name: str | None = None,
+    hours: int = 72,
+) -> str:
+    stats = report_data(db, terms, risk, hours)
     lines = [
-        "MONITORAMENTO MIDIÁTICO — ÚLTIMAS 72 HORAS",
-        f"Total de notícias relevantes: {stats['total']}",
-        f"Risco crítico: {stats['por_risco'].get('10', 0)}",
+        "CENTRAL DE MONITORAMENTO DO MCS",
+        f"{recipient_name + ', ' if recipient_name else ''}seu recorte programado está pronto.",
+        f"Período: últimas {hours} horas | {_filter_label(terms, risk)}",
+        f"Notícias encontradas: {stats['total']} | Risco crítico: {stats['por_risco'].get('10', 0)}",
         "",
-        "NOTÍCIAS MAIS IMPORTANTES",
     ]
     for index, item in enumerate(stats["principais"], 1):
         lines.extend([
             f"{index}. {item['titulo']}",
-            f"{item['veiculo']} | {_label(item['editoria'])} | {_date(item['publicada_em'])}",
-            f"Abrangência: {SCOPE_LABELS[item['abrangencia']]} | Prioridade: {item['prioridade']} | Risco: {item['risco']} | Impacto: {item['impacto']}",
+            f"{item['veiculo']} | {_date(item['publicada_em'])} | Risco {item['risco']}",
             item["url"],
             "",
         ])
     if not stats["principais"]:
-        lines.append("Nenhuma notícia relevante nas últimas 72 horas.")
+        lines.append("Nenhuma notícia correspondeu aos filtros deste envio.")
     return "\n".join(lines)
 
-def send_report(db, recipients: list[str] | None = None) -> dict:
+
+def _send(message: EmailMessage, recipients: list[str]) -> None:
     cfg = settings()
-    recipients = recipients or parse_recipients(cfg.report_to)
-    if not all([cfg.smtp_host, recipients, cfg.report_from]): return {"enviado": False, "motivo": "SMTP ou destinatário não configurado"}
-    message = EmailMessage()
-    message["Subject"] = "Monitoramento RJ e Maricá: notícias das últimas 72 horas"
-    message["From"], message["To"] = cfg.report_from, ", ".join(recipients)
-    message.set_content(render_text_report(db))
-    message.add_alternative(render_report(db), subtype="html")
     with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port) as smtp:
         smtp.starttls()
-        if cfg.smtp_user: smtp.login(cfg.smtp_user, cfg.smtp_password)
+        if cfg.smtp_user:
+            smtp.login(cfg.smtp_user, cfg.smtp_password)
         smtp.send_message(message, to_addrs=recipients)
-    return {"enviado": True, "destinatarios": len(recipients)}
+
+
+def send_report(
+    db,
+    recipients: list[str] | None = None,
+    terms: list[str] | None = None,
+    risk: int | None = None,
+    recipient_name: str | None = None,
+    hours: int = 72,
+) -> dict:
+    cfg = settings()
+    recipients = recipients or parse_recipients(cfg.report_to)
+    if not all([cfg.smtp_host, recipients, cfg.report_from]):
+        return {"enviado": False, "motivo": "SMTP ou destinatário não configurado"}
+    message = EmailMessage()
+    message["Subject"] = "Radar MCS | seu resumo de notícias"
+    message["From"], message["To"] = cfg.report_from, ", ".join(recipients)
+    message.set_content(render_text_report(db, terms, risk, recipient_name, hours))
+    message.add_alternative(render_report(db, terms, risk, recipient_name, hours), subtype="html")
+    _send(message, recipients)
+    return {"enviado": True, "destinatarios": len(recipients), "noticias_no_email": EMAIL_NEWS_LIMIT}

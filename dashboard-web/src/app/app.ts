@@ -20,7 +20,12 @@ interface Filters { sources: string[]; sections: string[]; risks: number[]; keyw
 interface CurrentUser { id: number; username: string; displayName: string; email?: string; admin: boolean; }
 interface UserKeyword { id: number; keyword: string; }
 interface ManagedUser { id: number; username: string; displayName: string; email?: string; admin: boolean; active: boolean; }
-type DashboardPage = 'overview' | 'keywords' | 'sources' | 'news';
+interface EmailSchedule {
+  id: number; scheduledAt: string; risk: number | null; keywords: string[];
+  status: 'PENDING' | 'PREPARING' | 'SENT' | 'FAILED';
+  preparedAt?: string; sentAt?: string; lastError?: string;
+}
+type DashboardPage = 'overview' | 'keywords' | 'sources' | 'news' | 'schedules';
 
 @Component({
   selector: 'app-root',
@@ -52,6 +57,9 @@ export class App implements OnInit, OnDestroy {
   readonly accountsOpen = signal(false);
   readonly managedUsers = signal<ManagedUser[]>([]);
   readonly accountError = signal('');
+  readonly emailSchedules = signal<EmailSchedule[]>([]);
+  readonly scheduleError = signal('');
+  readonly scheduleMessage = signal('');
   private readonly popStateHandler = () => this.activatePage(this.pageFromPath(), false);
 
   days = 7;
@@ -79,6 +87,10 @@ export class App implements OnInit, OnDestroy {
   accountEmail = '';
   accountPassword = '';
   accountAdmin = false;
+  scheduleDate = '';
+  scheduleTime = '';
+  scheduleRisk = '';
+  scheduleKeywords = new Set<string>();
 
   ngOnInit(): void {
     this.activatePage(this.pageFromPath(), false);
@@ -179,6 +191,7 @@ export class App implements OnInit, OnDestroy {
   private initializeDashboard(): void {
     this.http.get<Filters>('/dashboard-api/filters').subscribe({ next: value => this.filters.set(value) });
     if (this.page() === 'keywords') this.loadKeywords();
+    if (this.page() === 'schedules') { this.loadKeywords(); this.loadSchedules(); this.prepareScheduleForm(); }
     this.load();
   }
 
@@ -195,7 +208,8 @@ export class App implements OnInit, OnDestroy {
       overview: '/',
       keywords: '/palavras-chave',
       sources: '/veiculos',
-      news: '/noticias'
+      news: '/noticias',
+      schedules: '/envios'
     }[page];
   }
 
@@ -204,7 +218,8 @@ export class App implements OnInit, OnDestroy {
       overview: 'Panorama de impacto midiático',
       keywords: 'Palavras-chave monitoradas',
       sources: 'Cobertura por veículos',
-      news: 'Notícias monitoradas'
+      news: 'Notícias monitoradas',
+      schedules: 'Envios programados'
     }[this.page()];
   }
 
@@ -213,7 +228,8 @@ export class App implements OnInit, OnDestroy {
       overview: 'Veja o que exige atenção agora, sem excesso de informação.',
       keywords: 'Defina os temas da sua conta e acompanhe o volume de cada termo.',
       sources: 'Entenda quais veículos e editorias concentram a cobertura.',
-      news: 'Consulte, filtre e abra todas as notícias coletadas.'
+      news: 'Consulte, filtre e abra todas as notícias coletadas.',
+      schedules: 'Receba um recorte objetivo no seu e-mail, no dia e horário que escolher.'
     }[this.page()];
   }
 
@@ -224,13 +240,20 @@ export class App implements OnInit, OnDestroy {
   private activatePage(page: DashboardPage, resetDetailFilters: boolean): void {
     const changed = this.page() !== page;
     this.page.set(page);
-    document.title = `${this.pageTitle()} — Mídia Radar`;
+    document.title = `${this.pageTitle()} — Central MCS`;
 
     if (page === 'keywords' && this.user()) {
       this.keywordError.set('');
       this.keywordMessage.set('');
       this.selectedKeywordIds.clear();
       this.loadKeywords();
+    }
+    if (page === 'schedules' && this.user()) {
+      this.scheduleError.set('');
+      this.scheduleMessage.set('');
+      this.loadKeywords();
+      this.loadSchedules();
+      this.prepareScheduleForm();
     }
 
     if (changed && resetDetailFilters && page !== 'news' && this.hasDetailFilters()) {
@@ -248,6 +271,7 @@ export class App implements OnInit, OnDestroy {
     if (path === '/palavras-chave') return 'keywords';
     if (path === '/veiculos') return 'sources';
     if (path === '/noticias') return 'news';
+    if (path === '/envios') return 'schedules';
     return 'overview';
   }
 
@@ -363,6 +387,85 @@ export class App implements OnInit, OnDestroy {
       next: items => this.userKeywords.set(items),
       error: () => this.keywordError.set('Não foi possível carregar suas palavras-chave.')
     });
+  }
+
+  private loadSchedules(): void {
+    this.http.get<EmailSchedule[]>('/dashboard-api/email-schedules').subscribe({
+      next: schedules => this.emailSchedules.set(schedules),
+      error: error => this.scheduleError.set(this.authError(error, 'Não foi possível carregar seus envios.'))
+    });
+  }
+
+  private prepareScheduleForm(): void {
+    if (this.scheduleDate && this.scheduleTime) return;
+    const next = new Date(Date.now() + 60 * 60 * 1000);
+    this.scheduleDate = [
+      next.getFullYear(),
+      String(next.getMonth() + 1).padStart(2, '0'),
+      String(next.getDate()).padStart(2, '0')
+    ].join('-');
+    this.scheduleTime = `${String(next.getHours()).padStart(2, '0')}:${String(next.getMinutes()).padStart(2, '0')}`;
+  }
+
+  toggleScheduleKeyword(keyword: string, checked: boolean): void {
+    if (checked) this.scheduleKeywords.add(keyword); else this.scheduleKeywords.delete(keyword);
+  }
+
+  scheduleKeywordChecked(keyword: string): boolean { return this.scheduleKeywords.has(keyword); }
+
+  toggleAllScheduleKeywords(checked: boolean): void {
+    this.scheduleKeywords.clear();
+    if (checked) this.filters().keywords.forEach(keyword => this.scheduleKeywords.add(keyword));
+  }
+
+  createSchedule(): void {
+    this.scheduleError.set('');
+    this.scheduleMessage.set('');
+    if (!this.scheduleDate || !this.scheduleTime) {
+      this.scheduleError.set('Escolha a data e o horário do envio.');
+      return;
+    }
+    this.http.post<{ id: number }>('/dashboard-api/email-schedules', {
+      scheduledAt: `${this.scheduleDate}T${this.scheduleTime}:00`,
+      risk: this.scheduleRisk === '' ? null : Number(this.scheduleRisk),
+      keywords: [...this.scheduleKeywords]
+    }).subscribe({
+      next: () => {
+        this.scheduleMessage.set('Envio programado. A coleta será atualizada antes do horário.');
+        this.scheduleKeywords.clear();
+        this.scheduleRisk = '';
+        this.scheduleDate = '';
+        this.scheduleTime = '';
+        this.prepareScheduleForm();
+        this.loadSchedules();
+      },
+      error: error => this.scheduleError.set(this.authError(error, 'Não foi possível programar o envio.'))
+    });
+  }
+
+  cancelSchedule(schedule: EmailSchedule): void {
+    this.scheduleError.set('');
+    this.http.delete(`/dashboard-api/email-schedules/${schedule.id}`).subscribe({
+      next: () => { this.scheduleMessage.set('Agendamento cancelado.'); this.loadSchedules(); },
+      error: error => this.scheduleError.set(this.authError(error, 'Não foi possível cancelar o agendamento.'))
+    });
+  }
+
+  activeSchedules(): number {
+    return this.emailSchedules().filter(item => item.status === 'PENDING' || item.status === 'PREPARING').length;
+  }
+
+  scheduleStatus(value: EmailSchedule['status']): string {
+    return { PENDING: 'Programado', PREPARING: 'Preparando', SENT: 'Enviado', FAILED: 'Falhou' }[value];
+  }
+
+  scheduleRiskLabel(value: number | null): string {
+    return value == null ? 'Todos os riscos' : `Risco ${value}`;
+  }
+
+  minimumScheduleDate(): string {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
 
   openAccounts(): void {

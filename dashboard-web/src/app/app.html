@@ -2,8 +2,8 @@
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">
-        <span class="brand-mark">M</span>
-        <div><strong>Mídia Radar</strong><small>Inteligência reputacional</small></div>
+        <span class="brand-mark">MCS</span>
+        <div><strong>Central MCS</strong><small>Radar de imprensa</small></div>
       </div>
 
       <nav aria-label="Navegação principal">
@@ -11,6 +11,7 @@
         <a href="/palavras-chave" [class.active]="page() === 'keywords'" (click)="navigate('keywords', $event)"><span>⌕</span> Palavras-chave</a>
         <a href="/veiculos" [class.active]="page() === 'sources'" (click)="navigate('sources', $event)"><span>◎</span> Veículos</a>
         <a href="/noticias" [class.active]="page() === 'news'" (click)="navigate('news', $event)"><span>≡</span> Notícias</a>
+        <a href="/envios" [class.active]="page() === 'schedules'" (click)="navigate('schedules', $event)"><span>↗</span> Envios por e-mail</a>
       </nav>
 
       <div class="side-brief">
@@ -26,6 +27,7 @@
       <a href="/palavras-chave" [class.active]="page() === 'keywords'" (click)="navigate('keywords', $event)"><span>⌕</span><small>Palavras</small></a>
       <a href="/veiculos" [class.active]="page() === 'sources'" (click)="navigate('sources', $event)"><span>◎</span><small>Veículos</small></a>
       <a href="/noticias" [class.active]="page() === 'news'" (click)="navigate('news', $event)"><span>≡</span><small>Notícias</small></a>
+      <a href="/envios" [class.active]="page() === 'schedules'" (click)="navigate('schedules', $event)"><span>↗</span><small>Envios</small></a>
     </nav>
 
     <main>
@@ -92,7 +94,7 @@
             <article><span>1</span><div><strong>Panorama executivo</strong><small>Indicadores, leitura do período, riscos, veículos e palavras-chave.</small></div></article>
             <article><span>2</span><div><strong>Notícias prioritárias</strong><small>Até 12 destaques ordenados por risco e impacto, com links clicáveis.</small></div></article>
           </div>
-          <label class="report-notes"><strong>Nota opcional do analista</strong><small>Use um texto curto para preservar o formato executivo.</small><textarea [(ngModel)]="reportNotes" rows="6" maxlength="700" placeholder="Inclua uma observação ou recomendação objetiva…"></textarea><span>{{ reportNotes.length }}/700</span></label>
+          <label class="report-notes"><strong>Parecer Técnico</strong><small>Registre uma leitura profissional, recomendação ou contexto para o documento.</small><textarea [(ngModel)]="reportNotes" rows="6" maxlength="700" placeholder="Escreva o parecer técnico que acompanhará o relatório…"></textarea><span>{{ reportNotes.length }}/700</span></label>
           <p class="report-error" *ngIf="reportError()">{{ reportError() }}</p>
           <div class="report-modal-actions">
             <span>Máximo de 2 páginas A4</span>
@@ -217,6 +219,56 @@
             <div class="table-wrap"><table><thead><tr><th>Notícia</th><th>Veículo</th><th>Editoria</th><th>Risco</th><th>Impacto</th><th>Publicação</th></tr></thead><tbody><tr *ngFor="let article of visibleArticles()"><td><a [href]="article.url" target="_blank" rel="noopener">{{ article.title }}</a><div class="tags"><span *ngFor="let word of article.keywords.slice(0, 3)">{{ word }}</span></div></td><td><strong>{{ article.source }}</strong><small *ngIf="article.journalist">{{ article.journalist }}</small></td><td>{{ toneLabel(article.section) }}</td><td><span class="risk-badge" [ngClass]="riskClass(article.risk)">{{ article.risk }}</span><small>{{ toneLabel(article.tone) }}</small></td><td><b>{{ article.impact | number:'1.1-1' }}</b></td><td>{{ date(article.publishedAt) }}</td></tr></tbody></table></div>
           </section>
         </ng-container>
+
+        <ng-container *ngIf="page() === 'schedules'">
+          <section class="schedule-intro">
+            <div>
+              <p class="eyebrow">BOLETIM PESSOAL</p>
+              <h2>Notícias no momento certo</h2>
+              <p>Você escolhe o recorte. O sistema atualiza a coleta antes do horário e entrega um resumo curto no e-mail cadastrado.</p>
+            </div>
+            <div class="schedule-email"><span>DESTINO</span><strong>{{ user()?.email }}</strong><small>O envio usa exclusivamente o e-mail desta conta.</small></div>
+          </section>
+
+          <section class="schedule-layout">
+            <article class="panel schedule-builder">
+              <div class="panel-head"><div><p>NOVO AGENDAMENTO</p><h2>Programar boletim</h2></div><span>{{ activeSchedules() }}/2 ativos</span></div>
+              <form (ngSubmit)="createSchedule()">
+                <div class="schedule-when">
+                  <label><span>Data</span><input name="scheduleDate" [(ngModel)]="scheduleDate" type="date" [min]="minimumScheduleDate()" required></label>
+                  <label><span>Horário</span><input name="scheduleTime" [(ngModel)]="scheduleTime" type="time" required></label>
+                  <label><span>Risco</span><select name="scheduleRisk" [(ngModel)]="scheduleRisk"><option value="">Todos</option><option value="10">Risco 10</option><option value="5">Risco 5</option><option value="0">Risco 0</option></select></label>
+                </div>
+                <div class="schedule-terms-head">
+                  <div><strong>Palavras-chave</strong><small>Sem seleção, o boletim considera todos os termos da sua conta.</small></div>
+                  <label><input type="checkbox" [checked]="scheduleKeywords.size === filters().keywords.length && filters().keywords.length > 0" (change)="toggleAllScheduleKeywords($any($event.target).checked)"> Todas</label>
+                </div>
+                <div class="schedule-terms">
+                  <label *ngFor="let term of filters().keywords" [class.selected]="scheduleKeywordChecked(term)"><input type="checkbox" [checked]="scheduleKeywordChecked(term)" (change)="toggleScheduleKeyword(term, $any($event.target).checked)"><span>{{ term }}</span></label>
+                </div>
+                <p class="report-error" *ngIf="scheduleError()">{{ scheduleError() }}</p>
+                <p class="keyword-success" *ngIf="scheduleMessage()">{{ scheduleMessage() }}</p>
+                <button class="schedule-submit" type="submit" [disabled]="activeSchedules() >= 2">Programar envio</button>
+              </form>
+            </article>
+
+            <article class="panel schedule-list-panel">
+              <div class="panel-head"><div><p>SUA AGENDA</p><h2>Próximos envios</h2></div><span>Máximo de 2</span></div>
+              <div class="schedule-list">
+                <article *ngFor="let schedule of emailSchedules()" [class.failed]="schedule.status === 'FAILED'">
+                  <div class="schedule-date"><strong>{{ date(schedule.scheduledAt) }}</strong><span [attr.data-status]="schedule.status">{{ scheduleStatus(schedule.status) }}</span></div>
+                  <p>{{ scheduleRiskLabel(schedule.risk) }} · {{ schedule.keywords.length }} palavra(s)-chave</p>
+                  <small *ngIf="schedule.status === 'PENDING'">A coleta começa até 20 minutos antes.</small>
+                  <small *ngIf="schedule.status === 'PREPARING'">Atualizando notícias para este envio.</small>
+                  <small *ngIf="schedule.status === 'SENT'">Entregue em {{ date(schedule.sentAt!) }}.</small>
+                  <small *ngIf="schedule.status === 'FAILED'">{{ schedule.lastError || 'O envio não foi concluído.' }}</small>
+                  <button *ngIf="schedule.status === 'PENDING' || schedule.status === 'FAILED'" type="button" (click)="cancelSchedule(schedule)">Cancelar</button>
+                </article>
+                <div class="schedule-empty" *ngIf="!emailSchedules().length"><span>↗</span><strong>Nenhum envio programado</strong><p>Crie seu primeiro boletim usando o formulário ao lado.</p></div>
+              </div>
+            </article>
+          </section>
+        </ng-container>
       </ng-container>
     </main>
   </div>
@@ -225,7 +277,7 @@
 <ng-template #loginView>
   <main class="login-page">
     <section class="login-card">
-      <div class="brand-mark">M</div>
+      <div class="brand-mark">MCS</div>
       <p class="eyebrow">CENTRAL DE MONITORAMENTO DO MCS</p>
       <h1 *ngIf="authMode() === 'login'">Acesse seu monitoramento</h1>
       <h1 *ngIf="authMode() === 'register'">Crie sua conta</h1>
@@ -236,7 +288,7 @@
       <p *ngIf="authMode() === 'register'">Seu e-mail será usado somente para segurança e recuperação da conta.</p>
       <p *ngIf="authMode() === 'verify'">Digite o código de 6 dígitos que enviamos. Ele expira em 15 minutos.</p>
       <p *ngIf="authMode() === 'forgot'">Enviaremos um link de redefinição para o e-mail cadastrado.</p>
-      <p *ngIf="authMode() === 'reset'">Escolha uma senha com pelo menos 8 caracteres.</p>
+      <p *ngIf="authMode() === 'reset'">Digite a nova senha que deseja usar na sua conta.</p>
       <p class="auth-success" *ngIf="authMessage()">{{ authMessage() }}</p>
       <form *ngIf="authMode() === 'login'" (ngSubmit)="login()">
         <label><span>Usuário</span><input name="username" [(ngModel)]="loginUsername" autocomplete="username" required></label>
