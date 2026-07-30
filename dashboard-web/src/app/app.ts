@@ -19,13 +19,17 @@ interface Overview {
 interface Filters { sources: string[]; sections: string[]; risks: number[]; keywords: string[]; tones: string[]; municipalities: string[]; }
 interface CurrentUser { id: number; username: string; displayName: string; email?: string; admin: boolean; }
 interface UserKeyword { id: number; keyword: string; }
-interface ManagedUser { id: number; username: string; displayName: string; email?: string; admin: boolean; active: boolean; }
+interface ManagedUser {
+  id: number; username: string; displayName: string; email?: string;
+  emailVerified: boolean; admin: boolean; active: boolean; createdAt: string;
+  ownerCandidate: boolean;
+}
 interface EmailSchedule {
   id: number; scheduledAt: string; risk: number | null; keywords: string[];
   status: 'PENDING' | 'PREPARING' | 'SENT' | 'FAILED';
   preparedAt?: string; sentAt?: string; lastError?: string;
 }
-type DashboardPage = 'overview' | 'keywords' | 'sources' | 'news' | 'schedules';
+type DashboardPage = 'overview' | 'keywords' | 'sources' | 'news' | 'schedules' | 'admin';
 
 @Component({
   selector: 'app-root',
@@ -54,9 +58,9 @@ export class App implements OnInit, OnDestroy {
   readonly keywordError = signal('');
   readonly keywordMessage = signal('');
   readonly geographyOpen = signal(false);
-  readonly accountsOpen = signal(false);
   readonly managedUsers = signal<ManagedUser[]>([]);
   readonly accountError = signal('');
+  readonly accountMessage = signal('');
   readonly emailSchedules = signal<EmailSchedule[]>([]);
   readonly scheduleError = signal('');
   readonly scheduleMessage = signal('');
@@ -86,7 +90,7 @@ export class App implements OnInit, OnDestroy {
   accountUsername = '';
   accountEmail = '';
   accountPassword = '';
-  accountAdmin = false;
+  accountSearch = '';
   scheduleDate = '';
   scheduleTime = '';
   scheduleRisk = '';
@@ -189,6 +193,16 @@ export class App implements OnInit, OnDestroy {
   }
 
   private initializeDashboard(): void {
+    if (this.page() === 'admin' && !this.user()?.admin) {
+      window.history.replaceState({}, '', '/');
+      this.page.set('overview');
+      document.title = `${this.pageTitle()} — Central MCS`;
+    }
+    if (this.page() === 'admin') {
+      this.loadAccounts();
+      this.loading.set(false);
+      return;
+    }
     this.http.get<Filters>('/dashboard-api/filters').subscribe({ next: value => this.filters.set(value) });
     if (this.page() === 'keywords') this.loadKeywords();
     if (this.page() === 'schedules') { this.loadKeywords(); this.loadSchedules(); this.prepareScheduleForm(); }
@@ -209,7 +223,8 @@ export class App implements OnInit, OnDestroy {
       keywords: '/palavras-chave',
       sources: '/veiculos',
       news: '/noticias',
-      schedules: '/envios'
+      schedules: '/envios',
+      admin: '/admin'
     }[page];
   }
 
@@ -219,7 +234,8 @@ export class App implements OnInit, OnDestroy {
       keywords: 'Palavras-chave monitoradas',
       sources: 'Cobertura por veículos',
       news: 'Notícias monitoradas',
-      schedules: 'Envios programados'
+      schedules: 'Envios programados',
+      admin: 'Administração'
     }[this.page()];
   }
 
@@ -229,7 +245,8 @@ export class App implements OnInit, OnDestroy {
       keywords: 'Defina os temas da sua conta e acompanhe o volume de cada termo.',
       sources: 'Entenda quais veículos e editorias concentram a cobertura.',
       news: 'Consulte, filtre e abra todas as notícias coletadas.',
-      schedules: 'Receba um recorte objetivo no seu e-mail, no dia e horário que escolher.'
+      schedules: 'Receba um recorte objetivo no seu e-mail, no dia e horário que escolher.',
+      admin: 'Gerencie acessos e contas da Central de Monitoramento.'
     }[this.page()];
   }
 
@@ -238,6 +255,10 @@ export class App implements OnInit, OnDestroy {
   }
 
   private activatePage(page: DashboardPage, resetDetailFilters: boolean): void {
+    if (page === 'admin' && this.user() && !this.user()!.admin) {
+      window.history.replaceState({}, '', '/');
+      page = 'overview';
+    }
     const changed = this.page() !== page;
     this.page.set(page);
     document.title = `${this.pageTitle()} — Central MCS`;
@@ -254,6 +275,15 @@ export class App implements OnInit, OnDestroy {
       this.loadKeywords();
       this.loadSchedules();
       this.prepareScheduleForm();
+    }
+    if (page === 'admin' && this.user()?.admin) {
+      this.accountError.set('');
+      this.accountMessage.set('');
+      this.loadAccounts();
+    }
+    if (page !== 'admin' && this.user() && !this.data()) {
+      this.http.get<Filters>('/dashboard-api/filters').subscribe({ next: value => this.filters.set(value) });
+      this.load();
     }
 
     if (changed && resetDetailFilters && page !== 'news' && this.hasDetailFilters()) {
@@ -272,6 +302,7 @@ export class App implements OnInit, OnDestroy {
     if (path === '/veiculos') return 'sources';
     if (path === '/noticias') return 'news';
     if (path === '/envios') return 'schedules';
+    if (path === '/admin') return 'admin';
     return 'overview';
   }
 
@@ -468,30 +499,66 @@ export class App implements OnInit, OnDestroy {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
 
-  openAccounts(): void {
-    this.accountError.set('');
-    this.accountsOpen.set(true);
-    this.loadAccounts();
-  }
-
-  closeAccounts(): void { this.accountsOpen.set(false); }
-
   createAccount(): void {
     this.accountError.set('');
+    this.accountMessage.set('');
     this.http.post<{ id: number }>('/auth-api/users', {
       username: this.accountUsername,
       email: this.accountEmail,
       password: this.accountPassword,
-      admin: this.accountAdmin
+      admin: false
     }).subscribe({
       next: () => {
         this.accountUsername = '';
         this.accountEmail = '';
         this.accountPassword = '';
-        this.accountAdmin = false;
+        this.accountMessage.set('Conta criada com acesso padrão ao dashboard.');
         this.loadAccounts();
       },
       error: error => this.accountError.set(this.authError(error, 'Não foi possível criar a conta.'))
+    });
+  }
+
+  deleteAccount(account: ManagedUser): void {
+    this.accountError.set('');
+    this.accountMessage.set('');
+    if (account.id === this.user()?.id) {
+      this.accountError.set('Sua própria conta não pode ser excluída.');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Excluir permanentemente a conta "${account.username}"? Palavras-chave, sessões e agendamentos dessa conta também serão removidos.`
+    );
+    if (!confirmed) return;
+    this.http.delete(`/auth-api/users/${account.id}`).subscribe({
+      next: () => {
+        this.accountMessage.set(`A conta ${account.username} foi excluída.`);
+        this.loadAccounts();
+      },
+      error: error => this.accountError.set(this.authError(error, 'Não foi possível excluir a conta.'))
+    });
+  }
+
+  transferOwnership(account: ManagedUser): void {
+    this.accountError.set('');
+    this.accountMessage.set('');
+    const confirmed = window.confirm(
+      `Transferir a administração exclusiva para "${account.username}"? Sua conta perderá o acesso administrativo.`
+    );
+    if (!confirmed) return;
+    this.http.put(`/auth-api/users/${account.id}/owner`, {}).subscribe({
+      next: () => {
+        this.authMessage.set(`Administração transferida. Entre com a conta ${account.username} para acessar /admin.`);
+        this.http.post('/auth-api/logout', {}).subscribe({
+          next: () => {
+            this.user.set(null);
+            this.data.set(null);
+            this.authMode.set('login');
+            window.history.replaceState({}, '', '/');
+          }
+        });
+      },
+      error: error => this.accountError.set(this.authError(error, 'Não foi possível transferir a administração.'))
     });
   }
 
@@ -500,6 +567,19 @@ export class App implements OnInit, OnDestroy {
       next: users => this.managedUsers.set(users),
       error: () => this.accountError.set('Não foi possível carregar as contas.')
     });
+  }
+
+  filteredAccounts(): ManagedUser[] {
+    const term = this.accountSearch.trim().toLocaleLowerCase('pt-BR');
+    if (!term) return this.managedUsers();
+    return this.managedUsers().filter(account =>
+      [account.username, account.displayName, account.email]
+        .some(value => value?.toLocaleLowerCase('pt-BR').includes(term))
+    );
+  }
+
+  activeAdminCount(): number {
+    return this.managedUsers().filter(account => account.active && account.admin).length;
   }
 
   load(): void {
@@ -529,7 +609,7 @@ export class App implements OnInit, OnDestroy {
       next: async value => {
         try {
           await this.reportPdf.generate(value, {
-            periodLabel: `Últimos ${this.days} dias`,
+            periodLabel: this.periodLabel(),
             filters: this.activeFilterLabels(),
             notes: this.reportNotes,
             dashboardUrl: `${window.location.origin}/noticias`
@@ -549,6 +629,11 @@ export class App implements OnInit, OnDestroy {
   }
 
   clear(): void { this.days = 7; this.keyword = ''; this.source = ''; this.risk = ''; this.tone = ''; this.selectedLocations = []; this.search = ''; this.load(); }
+  periodLabel(): string {
+    if (this.days === 1) return 'Últimas 24 horas';
+    if (this.days === 2) return 'Últimas 48 horas';
+    return `Últimos ${this.days} dias`;
+  }
   max(points: Point[] | undefined): number { return Math.max(...(points ?? []).map(item => item.value), 1); }
   width(point: Point, points: Point[] | undefined): number { return Math.max(3, point.value / this.max(points) * 100); }
   riskClass(risk: number): string { return risk === 10 ? 'critical' : risk === 5 ? 'attention' : 'neutral'; }

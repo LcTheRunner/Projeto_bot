@@ -23,6 +23,16 @@ def scheduled_email_job():
     prepare_until = now + timedelta(minutes=20)
     with SessionLocal() as db:
         try:
+            recovered = db.execute(text("""
+                UPDATE email_schedules
+                SET status = 'FAILED',
+                    last_error = 'O worker foi interrompido durante o envio. Cancele este registro e programe novamente'
+                WHERE status = 'PREPARING' AND scheduled_at < :stale_before
+            """), {"stale_before": now - timedelta(minutes=30)})
+            if recovered.rowcount:
+                db.commit()
+                logging.warning("%s envio(s) interrompido(s) foram liberados", recovered.rowcount)
+
             schedules_to_prepare = db.execute(text("""
                 SELECT id, keywords_json FROM email_schedules
                 WHERE status = 'PENDING' AND prepared_at IS NULL
@@ -61,11 +71,13 @@ def scheduled_email_job():
         for schedule in due:
             schedule_id = schedule["id"]
             try:
-                db.execute(text("""
+                claimed = db.execute(text("""
                     UPDATE email_schedules SET status = 'PREPARING', last_error = NULL
                     WHERE id = :id AND status = 'PENDING'
                 """), {"id": schedule_id})
                 db.commit()
+                if claimed.rowcount != 1:
+                    continue
                 keywords = json.loads(schedule["keywords_json"] or "[]")
                 result = send_report(
                     db,

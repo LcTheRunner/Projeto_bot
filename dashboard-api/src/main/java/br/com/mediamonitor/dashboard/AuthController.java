@@ -83,6 +83,18 @@ public class AuthController {
         return Map.of("id", auth.createUser(auth.requireUser(request), body.username(), body.displayName(), body.email(), body.password(), body.admin()));
     }
 
+    @PutMapping("/users/{id}/owner")
+    public Map<String, Boolean> transferOwnership(@PathVariable long id, HttpServletRequest request) {
+        auth.transferOwnership(auth.requireUser(request), id);
+        return Map.of("updated", true);
+    }
+
+    @DeleteMapping("/users/{id}")
+    public Map<String, Boolean> delete(@PathVariable long id, HttpServletRequest request) {
+        auth.deleteUser(auth.requireUser(request), id);
+        return Map.of("deleted", true);
+    }
+
     private ResponseCookie sessionCookie(String token, HttpServletRequest request, Duration age) {
         boolean secure = request.isSecure() || "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"));
         return ResponseCookie.from("mcs_session", token).httpOnly(true).secure(secure).sameSite("Strict")

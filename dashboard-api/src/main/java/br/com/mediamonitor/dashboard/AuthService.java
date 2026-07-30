@@ -3,6 +3,8 @@ package br.com.mediamonitor.dashboard;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -12,6 +14,7 @@ import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.net.URLEncoder;
@@ -27,6 +30,7 @@ import java.util.Map;
 @Service
 public class AuthService {
     public record User(long id, String username, String displayName, String email, boolean admin) {}
+    private static final Logger LOGGER = LoggerFactory.getLogger(AuthService.class);
     private static final List<String> DEFAULT_KEYWORDS = List.of(
             "Instituto Carioca", "esporte e lazer", "corrupção", "emenda parlamentar",
             "emendas parlamentares", "político corrupto", "políticos corruptos",
@@ -43,6 +47,8 @@ public class AuthService {
 
     @Value("${dashboard.admin-user:equipe}") private String adminUser;
     @Value("${dashboard.admin-password:}") private String adminPassword;
+    @Value("${dashboard.owner-username:}") private String ownerUsername;
+    @Value("${dashboard.owner-email:}") private String ownerEmail;
     @Value("${dashboard.session-days:7}") private int sessionDays;
     @Value("${dashboard.public-url:http://localhost:4200}") private String publicUrl;
     @Value("${dashboard.mail-from:}") private String mailFrom;
@@ -133,6 +139,7 @@ public class AuthService {
             jdbc.queryForList("SELECT id FROM dashboard_users", Long.class).forEach(this::seedKeywords);
             jdbc.update("INSERT INTO system_migrations(migration_key) VALUES ('default_keywords_v2')");
         }
+        enforceConfiguredOwnerExclusivity();
     }
 
     public String login(String username, String password) {
@@ -172,15 +179,97 @@ public class AuthService {
 
     public List<Map<String, Object>> users(User actor) {
         requireAdmin(actor);
-        return jdbc.queryForList("""
-                SELECT id, username, display_name AS displayName, email, is_admin AS admin, active
-                FROM dashboard_users ORDER BY display_name
+        List<Map<String, Object>> users = jdbc.queryForList("""
+                SELECT id, username, display_name AS displayName, email,
+                       email_verified AS emailVerified, is_admin AS admin, active, created_at AS createdAt
+                FROM dashboard_users ORDER BY created_at DESC
                 """);
+        users.forEach(user -> user.put(
+                "ownerCandidate",
+                isConfiguredOwner((String) user.get("username"), (String) user.get("email"))
+        ));
+        return users;
     }
 
+    @Transactional
     public long createUser(User actor, String username, String displayName, String email, String password, boolean admin) {
-        requireAdmin(actor);
-        return createUserInternal(username, displayName, email, password, admin);
+        requireCurrentAdminForUpdate(actor);
+        if (admin) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Novas contas são criadas como usuário comum. Use a transferência protegida para alterar o administrador"
+            );
+        }
+        return createUserInternal(username, displayName, email, password, false);
+    }
+
+    @Transactional
+    public void transferOwnership(User actor, long targetId) {
+        requireCurrentAdminForUpdate(actor);
+        List<Map<String, Object>> targetRows = jdbc.queryForList("""
+                SELECT id, username, email, active, email_verified
+                FROM dashboard_users WHERE id = ? FOR UPDATE
+                """, targetId);
+        if (targetRows.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conta não encontrada");
+        }
+        Map<String, Object> target = targetRows.getFirst();
+        if (!isConfiguredOwner((String) target.get("username"), (String) target.get("email"))) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "A administração só pode ser transferida para a conta e o e-mail configurados como proprietários"
+            );
+        }
+        if (!Boolean.TRUE.equals(target.get("active")) || !Boolean.TRUE.equals(target.get("email_verified"))) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "A conta proprietária precisa estar ativa e com o e-mail confirmado"
+            );
+        }
+        jdbc.queryForList("""
+                SELECT id FROM dashboard_users
+                WHERE is_admin = TRUE AND active = TRUE FOR UPDATE
+                """, Long.class);
+        jdbc.update("""
+                UPDATE dashboard_users
+                SET is_admin = CASE WHEN id = ? THEN TRUE ELSE FALSE END
+                """, targetId);
+    }
+
+    @Transactional
+    public void deleteUser(User actor, long targetId) {
+        requireCurrentAdminForUpdate(actor);
+        List<Map<String, Object>> targetRows = jdbc.queryForList("""
+                SELECT id, username, is_admin, active
+                FROM dashboard_users WHERE id = ? FOR UPDATE
+                """, targetId);
+        if (targetRows.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conta não encontrada");
+        }
+        if (actor.id() == targetId) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Você não pode excluir a própria conta");
+        }
+        Map<String, Object> target = targetRows.getFirst();
+        if (Boolean.TRUE.equals(target.get("is_admin")) && Boolean.TRUE.equals(target.get("active"))) {
+            List<Long> activeAdmins = jdbc.queryForList("""
+                    SELECT id FROM dashboard_users
+                    WHERE is_admin = TRUE AND active = TRUE FOR UPDATE
+                    """, Long.class);
+            if (activeAdmins.size() <= 1) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "O último administrador não pode ser excluído");
+            }
+        }
+        List<String> scheduleStates = jdbc.queryForList("""
+                SELECT status FROM email_schedules
+                WHERE user_id = ? FOR UPDATE
+                """, String.class, targetId);
+        if (scheduleStates.stream().anyMatch("PREPARING"::equals)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Aguarde o envio de e-mail em preparação antes de excluir esta conta"
+            );
+        }
+        jdbc.update("DELETE FROM dashboard_users WHERE id = ?", targetId);
     }
 
     public long register(String username, String displayName, String email, String password) {
@@ -308,6 +397,17 @@ public class AuthService {
         if (!user.admin()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acesso administrativo necessário");
     }
 
+    private void requireCurrentAdminForUpdate(User user) {
+        List<Long> currentAdmins = jdbc.queryForList("""
+                SELECT id FROM dashboard_users
+                WHERE id = ? AND active = TRUE AND is_admin = TRUE
+                FOR UPDATE
+                """, Long.class, user.id());
+        if (currentAdmins.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acesso administrativo necessário");
+        }
+    }
+
     private void requireMailConfigured() {
         if (mailHost == null || mailHost.isBlank() || mailFrom == null || mailFrom.isBlank()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "O envio de e-mail ainda não está configurado");
@@ -326,6 +426,59 @@ public class AuthService {
         if (userId == null) return;
         DEFAULT_KEYWORDS.forEach(keyword ->
                 jdbc.update("INSERT IGNORE INTO user_keywords(user_id, keyword) VALUES (?, ?)", userId, keyword));
+    }
+
+    void enforceConfiguredOwnerExclusivity() {
+        String configuredOwner = cleanUsername(ownerUsername);
+        String configuredOwnerEmail = cleanEmail(ownerEmail);
+        if (!isValidOwnerConfiguration(configuredOwner, configuredOwnerEmail)) {
+            LOGGER.warn("Proprietário do dashboard não configurado; os papéis administrativos foram mantidos");
+            return;
+        }
+        jdbc.update("""
+                UPDATE dashboard_users candidate
+                JOIN dashboard_users owner
+                  ON owner.username = ?
+                 AND owner.email = ?
+                 AND owner.active = TRUE
+                 AND owner.email_verified = TRUE
+                SET candidate.is_admin = CASE WHEN candidate.id = owner.id THEN TRUE ELSE FALSE END
+                WHERE candidate.id = owner.id OR candidate.is_admin = TRUE
+                """, configuredOwner, configuredOwnerEmail);
+        List<Map<String, Object>> state = jdbc.queryForList("""
+                SELECT
+                  SUM(username = ? AND email = ? AND active = TRUE
+                      AND email_verified = TRUE AND is_admin = TRUE) AS owner_admin,
+                  SUM(active = TRUE AND is_admin = TRUE) AS active_admins
+                FROM dashboard_users
+                """, configuredOwner, configuredOwnerEmail);
+        if (!state.isEmpty()
+                && number(state.getFirst().get("owner_admin")) == 1
+                && number(state.getFirst().get("active_admins")) == 1) {
+            LOGGER.info("Proprietário '{}' confirmado como administrador único", configuredOwner);
+        } else {
+            LOGGER.warn(
+                    "A conta proprietária '{}' não foi encontrada ativa e verificada; papéis anteriores foram preservados",
+                    configuredOwner
+            );
+        }
+    }
+
+    private boolean isConfiguredOwner(String username, String email) {
+        String configuredOwner = cleanUsername(ownerUsername);
+        String configuredOwnerEmail = cleanEmail(ownerEmail);
+        return isValidOwnerConfiguration(configuredOwner, configuredOwnerEmail)
+                && configuredOwner.equals(cleanUsername(username))
+                && configuredOwnerEmail.equals(cleanEmail(email));
+    }
+
+    private boolean isValidOwnerConfiguration(String username, String email) {
+        return username.matches("[a-z0-9._-]{3,50}")
+                && email.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+    }
+
+    private int number(Object value) {
+        return value instanceof Number number ? number.intValue() : 0;
     }
 
     private void addColumnIfMissing(String table, String column, String ddl) {

@@ -12,6 +12,7 @@
         <a href="/veiculos" [class.active]="page() === 'sources'" (click)="navigate('sources', $event)"><span>◎</span> Veículos</a>
         <a href="/noticias" [class.active]="page() === 'news'" (click)="navigate('news', $event)"><span>≡</span> Notícias</a>
         <a href="/envios" [class.active]="page() === 'schedules'" (click)="navigate('schedules', $event)"><span>↗</span> Envios por e-mail</a>
+        <a *ngIf="user()?.admin" href="/admin" [class.active]="page() === 'admin'" (click)="navigate('admin', $event)"><span>⚙</span> Administração</a>
       </nav>
 
       <div class="side-brief">
@@ -22,12 +23,13 @@
       <div class="sidebar-footer"><span>MCS</span><span>Monitoramento diário</span></div>
     </aside>
 
-    <nav class="mobile-nav" aria-label="Navegação mobile">
+    <nav class="mobile-nav" [class.admin-nav]="user()?.admin" aria-label="Navegação mobile">
       <a href="/" [class.active]="page() === 'overview'" (click)="navigate('overview', $event)"><span>▦</span><small>Visão geral</small></a>
       <a href="/palavras-chave" [class.active]="page() === 'keywords'" (click)="navigate('keywords', $event)"><span>⌕</span><small>Palavras</small></a>
       <a href="/veiculos" [class.active]="page() === 'sources'" (click)="navigate('sources', $event)"><span>◎</span><small>Veículos</small></a>
       <a href="/noticias" [class.active]="page() === 'news'" (click)="navigate('news', $event)"><span>≡</span><small>Notícias</small></a>
       <a href="/envios" [class.active]="page() === 'schedules'" (click)="navigate('schedules', $event)"><span>↗</span><small>Envios</small></a>
+      <a *ngIf="user()?.admin" href="/admin" [class.active]="page() === 'admin'" (click)="navigate('admin', $event)"><span>⚙</span><small>Admin</small></a>
     </nav>
 
     <main>
@@ -38,34 +40,13 @@
           <p>{{ pageDescription() }}</p>
         </div>
         <div class="header-actions">
-          <label class="period-select"><span>Período</span><select [(ngModel)]="days" (change)="load()"><option [ngValue]="7">7 dias</option><option [ngValue]="30">30 dias</option><option [ngValue]="90">90 dias</option></select></label>
-          <button *ngIf="user()?.admin" class="utility-button" (click)="openAccounts()">Contas</button>
-          <button class="utility-button geography-button" (click)="openGeography()">⌖ {{ geographyLabel() }}</button>
+          <label *ngIf="page() !== 'admin'" class="period-select"><span>Período</span><select [(ngModel)]="days" (change)="load()"><option [ngValue]="1">24 horas</option><option [ngValue]="2">48 horas</option><option [ngValue]="7">7 dias</option><option [ngValue]="30">30 dias</option></select></label>
+          <button *ngIf="page() !== 'admin'" class="utility-button geography-button" (click)="openGeography()">⌖ {{ geographyLabel() }}</button>
           <button *ngIf="page() === 'overview' || page() === 'news'" class="utility-button" (click)="openReport()" [disabled]="loading()">PDF</button>
-          <button class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button>
+          <button *ngIf="page() !== 'admin'" class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button>
           <button class="logout-button" (click)="logout()">Sair</button>
         </div>
       </header>
-
-      <div class="modal-backdrop" *ngIf="accountsOpen()" (click)="closeAccounts()">
-        <section class="report-modal" role="dialog" aria-modal="true" aria-labelledby="accounts-title" (click)="$event.stopPropagation()">
-          <div class="report-modal-head">
-            <div><p class="eyebrow">ADMINISTRAÇÃO</p><h2 id="accounts-title">Contas de acesso</h2><span>Crie um login separado para cada usuário do monitoramento.</span></div>
-            <button class="modal-close" (click)="closeAccounts()" aria-label="Fechar">×</button>
-          </div>
-          <form class="account-form" (ngSubmit)="createAccount()">
-            <input name="accountUsername" [(ngModel)]="accountUsername" maxlength="100" placeholder="Usuário" required>
-            <input name="accountEmail" [(ngModel)]="accountEmail" type="email" maxlength="254" placeholder="E-mail para recuperação" required>
-            <input name="accountPassword" [(ngModel)]="accountPassword" type="password" placeholder="Senha" required>
-            <label><input name="accountAdmin" [(ngModel)]="accountAdmin" type="checkbox"> Administrador</label>
-            <button type="submit">Criar conta</button>
-          </form>
-          <p class="report-error" *ngIf="accountError()">{{ accountError() }}</p>
-          <div class="keyword-list account-list">
-            <div *ngFor="let account of managedUsers()"><span><strong>{{ account.displayName }}</strong><small>{{ account.username }} · {{ account.email || 'e-mail pendente' }} · {{ account.admin ? 'Administrador' : 'Usuário' }}</small></span><i [class.inactive]="!account.active">{{ account.active ? 'Ativa' : 'Inativa' }}</i></div>
-          </div>
-        </section>
-      </div>
 
       <div class="modal-backdrop" *ngIf="geographyOpen()" (click)="closeGeography()">
         <section class="report-modal geography-modal" role="dialog" aria-modal="true" aria-labelledby="geography-title" (click)="$event.stopPropagation()">
@@ -110,7 +91,7 @@
       <ng-container *ngIf="data() as dashboard">
         <ng-container *ngIf="page() === 'overview'">
           <section class="kpis">
-            <article><div class="icon violet">▤</div><div><small>MENÇÕES COLETADAS</small><strong>{{ dashboard.kpis.articles }}</strong><span>Nos últimos {{ days }} dias</span></div></article>
+            <article><div class="icon violet">▤</div><div><small>MENÇÕES COLETADAS</small><strong>{{ dashboard.kpis.articles }}</strong><span>{{ periodLabel() }}</span></div></article>
             <article><div class="icon blue">◎</div><div><small>VEÍCULOS DISTINTOS</small><strong>{{ dashboard.kpis.sources }}</strong><span>Fontes com conteúdo relevante</span></div></article>
             <article class="danger-card"><div class="icon red">!</div><div><small>ALERTAS CRÍTICOS</small><strong>{{ dashboard.kpis.risk10 }}</strong><span>{{ dashboard.kpis.risk10 ? 'Exigem leitura prioritária' : 'Nenhum alerta crítico' }}</span></div></article>
             <article class="impact-card" [ngClass]="impactClass(dashboard.kpis.averageImpact)"><div class="icon amber">↗</div><div class="impact-content"><small>IMPACTO MÉDIO <span class="info" title="Combina risco, palavras-chave encontradas e relevância da fonte.">i</span></small><strong>{{ dashboard.kpis.averageImpact | number:'1.1-2' }} <em>/ 10</em></strong><div class="impact-scale"><i [style.width.%]="dashboard.kpis.averageImpact * 10"></i></div><span>{{ impactLabel(dashboard.kpis.averageImpact) }}</span></div></article>
@@ -191,7 +172,7 @@
         <ng-container *ngIf="page() === 'sources'">
           <section class="page-summary">
             <article><span>VEÍCULOS DISTINTOS</span><strong>{{ dashboard.kpis.sources }}</strong><small>Fontes com notícias relevantes</small></article>
-            <article><span>NOTÍCIAS ANALISADAS</span><strong>{{ dashboard.kpis.articles }}</strong><small>Nos últimos {{ days }} dias</small></article>
+            <article><span>NOTÍCIAS ANALISADAS</span><strong>{{ dashboard.kpis.articles }}</strong><small>{{ periodLabel() }}</small></article>
             <article><span>MAIOR COBERTURA</span><strong>{{ topSource()?.label || '—' }}</strong><small>{{ topSource()?.value || 0 }} notícias</small></article>
           </section>
           <section class="grid two source-page-grid">
@@ -227,7 +208,6 @@
               <h2>Notícias no momento certo</h2>
               <p>Você escolhe o recorte. O sistema atualiza a coleta antes do horário e entrega um resumo curto no e-mail cadastrado.</p>
             </div>
-            <div class="schedule-email"><span>DESTINO</span><strong>{{ user()?.email }}</strong><small>O envio usa exclusivamente o e-mail desta conta.</small></div>
           </section>
 
           <section class="schedule-layout">
@@ -270,6 +250,65 @@
           </section>
         </ng-container>
       </ng-container>
+
+      <ng-container *ngIf="page() === 'admin' && user()?.admin">
+          <section class="admin-intro">
+            <div>
+              <p class="eyebrow">ACESSO RESTRITO</p>
+              <h2>Gestão de contas</h2>
+              <p>Esta área é protegida no servidor. Somente uma sessão administrativa válida consegue consultar ou alterar contas.</p>
+            </div>
+            <div class="admin-summary">
+              <span>CONTAS CADASTRADAS</span>
+              <strong>{{ managedUsers().length }}</strong>
+              <small>{{ user()?.username }} · administrador atual</small>
+            </div>
+          </section>
+
+          <p class="report-error admin-feedback" *ngIf="accountError()">{{ accountError() }}</p>
+          <p class="keyword-success admin-feedback" *ngIf="accountMessage()">{{ accountMessage() }}</p>
+
+          <section class="admin-layout">
+            <article class="panel admin-create">
+              <div class="panel-head"><div><p>NOVO ACESSO</p><h2>Criar conta</h2></div></div>
+              <p class="admin-helper">Novas contas recebem acesso comum. A permissão administrativa não pode ser concedida por este formulário.</p>
+              <form class="admin-account-form" (ngSubmit)="createAccount()">
+                <label><span>Usuário</span><input name="accountUsername" [(ngModel)]="accountUsername" maxlength="50" autocomplete="off" required></label>
+                <label><span>E-mail</span><input name="accountEmail" [(ngModel)]="accountEmail" type="email" maxlength="254" autocomplete="off" required></label>
+                <label><span>Senha inicial</span><input name="accountPassword" [(ngModel)]="accountPassword" type="password" autocomplete="new-password" required></label>
+                <button type="submit">Criar acesso</button>
+              </form>
+              <div class="admin-security-note"><span>⌾</span><p><strong>Proteção ativa</strong>Digitar <code>/admin</code> não libera esta área. Toda ação é revalidada pelo backend.</p></div>
+            </article>
+
+            <article class="panel admin-directory">
+              <div class="panel-head admin-directory-head">
+                <div><p>DIRETÓRIO</p><h2>Contas existentes</h2></div>
+                <label class="admin-search"><span>⌕</span><input [(ngModel)]="accountSearch" placeholder="Buscar usuário ou e-mail"></label>
+              </div>
+              <div class="admin-account-list">
+                <article *ngFor="let account of filteredAccounts()">
+                  <div class="admin-account-avatar">{{ account.username.charAt(0).toUpperCase() }}</div>
+                  <div class="admin-account-identity">
+                    <strong>{{ account.username }}</strong>
+                    <span>{{ account.email || 'E-mail não cadastrado' }}</span>
+                    <small>{{ account.emailVerified ? 'E-mail verificado' : 'E-mail pendente' }} · {{ account.admin ? 'Administrador' : 'Acesso padrão' }}</small>
+                  </div>
+                  <div class="admin-account-state">
+                    <span [class.admin-role]="account.admin">{{ account.admin ? 'ADMIN' : 'USUÁRIO' }}</span>
+                    <small>{{ account.active ? 'Ativa' : 'Inativa' }}</small>
+                  </div>
+                  <div class="admin-account-actions">
+                    <button *ngIf="account.ownerCandidate && (!account.admin || activeAdminCount() > 1)" type="button" class="owner-action" (click)="transferOwnership(account)">Tornar admin único</button>
+                    <span *ngIf="account.id === user()?.id">Sua conta</span>
+                    <button *ngIf="account.id !== user()?.id" type="button" class="delete-account" (click)="deleteAccount(account)">Excluir</button>
+                  </div>
+                </article>
+                <p class="empty" *ngIf="!filteredAccounts().length">Nenhuma conta corresponde à busca.</p>
+              </div>
+            </article>
+          </section>
+        </ng-container>
     </main>
   </div>
 </ng-container>

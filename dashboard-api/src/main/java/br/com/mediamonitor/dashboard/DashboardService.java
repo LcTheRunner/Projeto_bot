@@ -99,7 +99,7 @@ public class DashboardService {
         result.put("bySource", count(rows, r -> r.source));
         result.put("bySection", count(rows, r -> label(r.section)));
         result.put("byKeyword", keywordCount(rows, userKeywords));
-        result.put("timeline", timeline(rows, days));
+        result.put("timeline", timeline(rows, since.toLocalDate()));
         result.put("articles", (includeAll ? rows.stream() : rows.stream().limit(100)).map(ArticleRow::toMap).toList());
         return result;
     }
@@ -132,12 +132,10 @@ public class DashboardService {
         return ranked(counts, 20);
     }
 
-    private List<Map<String, Object>> timeline(List<ArticleRow> rows, int days) {
+    private List<Map<String, Object>> timeline(List<ArticleRow> rows, LocalDate start) {
         Map<LocalDate, Long> counts = rows.stream().collect(Collectors.groupingBy(r -> r.publishedAt.toLocalDate(), TreeMap::new, Collectors.counting()));
-        LocalDate start = LocalDate.now().minusDays(days - 1L);
         List<Map<String, Object>> result = new ArrayList<>();
-        for (int i = 0; i < days; i++) {
-            LocalDate day = start.plusDays(i);
+        for (LocalDate day = start; !day.isAfter(LocalDate.now()); day = day.plusDays(1)) {
             result.add(Map.of("label", day.toString(), "value", counts.getOrDefault(day, 0L)));
         }
         return result;

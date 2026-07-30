@@ -23,6 +23,8 @@ spring:
 dashboard:
   admin-user: ${DASHBOARD_USER:equipe}
   admin-password: ${DASHBOARD_PASSWORD:}
+  owner-username: ${DASHBOARD_OWNER_USERNAME:}
+  owner-email: ${DASHBOARD_OWNER_EMAIL:}
   session-days: 7
   public-url: ${DASHBOARD_PUBLIC_URL:http://localhost:4200}
   mail-from: ${REPORT_FROM:${SMTP_USER:}}

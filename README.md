@@ -35,6 +35,10 @@ tem busca textual e permite selecionar todo o Estado do Rio de Janeiro ou
 combinar livremente vários dos 92 municípios fluminenses, incluindo
 **Rio de Janeiro (capital)**, sem alterar a coleta nacional.
 
+O período do painel pode ser alterado entre **24 horas**, **48 horas**, **7
+dias** e **30 dias**. O mesmo período é usado nos indicadores, notícias e no
+relatório PDF.
+
 No cadastro, um código numérico de uso único é enviado ao e-mail e expira em
 15 minutos. A conta só pode entrar depois da confirmação.
 
@@ -51,6 +55,39 @@ horário, risco e um conjunto de palavras-chave e programar até dois boletins
 ativos. O destino é sempre o e-mail verificado da própria conta. O worker
 atualiza a coleta até 20 minutos antes do horário e envia um resumo editorial
 com no máximo seis notícias das últimas 24 horas que correspondam ao recorte.
+
+## Administração de contas
+
+A página `/admin` aparece somente para contas administrativas. Esconder o link
+não é usado como mecanismo de segurança: listagem, criação, exclusão e
+transferência de propriedade são revalidadas no backend em cada requisição.
+Contas comuns recebem HTTP 403 mesmo que tentem chamar a API diretamente.
+
+O proprietário permitido é definido pela combinação exata de
+`DASHBOARD_OWNER_USERNAME` e `DASHBOARD_OWNER_EMAIL`. As duas variáveis são
+obrigatórias e a conta correspondente precisa estar ativa e com o e-mail
+confirmado. Na inicialização, essa conta é promovida automaticamente como
+administradora única e a função administrativa é removida das demais contas.
+O sistema não usa nem armazena a senha do proprietário nessa configuração.
+
+Um administrador existente também pode acionar a transferência pela página.
+Ela só é aceita para a mesma combinação de usuário e e-mail configurada no
+servidor. O formulário da página cria somente usuários comuns.
+
+Depois de alterar essas variáveis, recrie o contêiner para que o novo ambiente
+seja carregado:
+
+```bash
+docker compose -f docker-compose.vps.yml up -d --build --force-recreate dashboard-api
+```
+
+O log do `dashboard-api` informa, sem exibir o e-mail, se o proprietário foi
+confirmado como administrador único ou se a conta correspondente não foi
+encontrada.
+
+A exclusão é permanente, não permite remover a própria conta nem o último
+administrador e também remove sessões, palavras-chave e agendamentos vinculados
+por integridade referencial.
 
 ## Como funciona
 
