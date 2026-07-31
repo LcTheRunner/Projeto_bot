@@ -31,10 +31,11 @@ class AuthServiceOwnerBootstrapTests {
         service = new AuthService(jdbc, mailSender);
         ReflectionTestUtils.setField(service, "ownerUsername", " Lucas ");
         ReflectionTestUtils.setField(service, "ownerEmail", " LUCAS@example.com ");
+        ReflectionTestUtils.setField(service, "additionalAdminUsernames", " admin, Lucas, ADMIN ");
     }
 
     @Test
-    void startupPromotesVerifiedMatchingAccountAndDemotesEveryOtherAdminAtomically() {
+    void startupPromotesOwnerAndConfiguredAdditionalAdminAtomically() {
         when(jdbc.queryForObject(
                 contains("information_schema.COLUMNS"),
                 eq(Integer.class),
@@ -54,9 +55,11 @@ class AuthServiceOwnerBootstrapTests {
         service.initialize();
 
         verify(jdbc).update(
-                contains("SET candidate.is_admin = CASE WHEN candidate.id = owner.id THEN TRUE ELSE FALSE END"),
+                contains("FIND_IN_SET(candidate.username, ?)"),
                 eq("lucas"),
-                eq("lucas@example.com")
+                eq("lucas@example.com"),
+                eq("admin"),
+                eq("admin")
         );
     }
 

@@ -23,6 +23,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +56,7 @@ public class AuthService {
     @Value("${dashboard.admin-password:}") private String adminPassword;
     @Value("${dashboard.owner-username:}") private String ownerUsername;
     @Value("${dashboard.owner-email:}") private String ownerEmail;
+    @Value("${dashboard.additional-admin-usernames:}") private String additionalAdminUsernames;
     @Value("${dashboard.session-days:7}") private int sessionDays;
     @Value("${dashboard.public-url:http://localhost:4200}") private String publicUrl;
     @Value("${dashboard.mail-from:}") private String mailFrom;
@@ -495,6 +497,8 @@ public class AuthService {
             LOGGER.warn("Proprietário do dashboard não configurado; os papéis administrativos foram mantidos");
             return;
         }
+        List<String> additionalAdmins = configuredAdditionalAdmins(configuredOwner);
+        String configuredAdditionalAdmins = String.join(",", additionalAdmins);
         jdbc.update("""
                 UPDATE dashboard_users candidate
                 JOIN dashboard_users owner
@@ -502,26 +506,44 @@ public class AuthService {
                  AND owner.email = ?
                  AND owner.active = TRUE
                  AND owner.email_verified = TRUE
-                SET candidate.is_admin = CASE WHEN candidate.id = owner.id THEN TRUE ELSE FALSE END
+                SET candidate.is_admin = CASE
+                  WHEN candidate.id = owner.id THEN TRUE
+                  WHEN candidate.active = TRUE AND candidate.email_verified = TRUE
+                       AND FIND_IN_SET(candidate.username, ?) > 0 THEN TRUE
+                  ELSE FALSE
+                END
                 WHERE candidate.id = owner.id OR candidate.is_admin = TRUE
-                """, configuredOwner, configuredOwnerEmail);
+                   OR FIND_IN_SET(candidate.username, ?) > 0
+                """, configuredOwner, configuredOwnerEmail,
+                configuredAdditionalAdmins, configuredAdditionalAdmins);
         List<Map<String, Object>> state = jdbc.queryForList("""
                 SELECT
-                  SUM(username = ? AND email = ? AND active = TRUE
-                      AND email_verified = TRUE AND is_admin = TRUE) AS owner_admin,
+                  SUM(active = TRUE AND email_verified = TRUE AND is_admin = TRUE
+                      AND ((username = ? AND email = ?) OR FIND_IN_SET(username, ?) > 0)) AS configured_admins,
                   SUM(active = TRUE AND is_admin = TRUE) AS active_admins
                 FROM dashboard_users
-                """, configuredOwner, configuredOwnerEmail);
+                """, configuredOwner, configuredOwnerEmail, configuredAdditionalAdmins);
+        int expectedAdmins = 1 + additionalAdmins.size();
         if (!state.isEmpty()
-                && number(state.getFirst().get("owner_admin")) == 1
-                && number(state.getFirst().get("active_admins")) == 1) {
-            LOGGER.info("Proprietário '{}' confirmado como administrador único", configuredOwner);
+                && number(state.getFirst().get("configured_admins")) == expectedAdmins
+                && number(state.getFirst().get("active_admins")) == expectedAdmins) {
+            LOGGER.info("Proprietário '{}' e {} administrador(es) adicional(is) confirmados",
+                    configuredOwner, additionalAdmins.size());
         } else {
             LOGGER.warn(
-                    "A conta proprietária '{}' não foi encontrada ativa e verificada; papéis anteriores foram preservados",
+                    "Não foi possível confirmar todos os administradores configurados para o proprietário '{}'",
                     configuredOwner
             );
         }
+    }
+
+    private List<String> configuredAdditionalAdmins(String configuredOwner) {
+        return Arrays.stream(additionalAdminUsernames == null ? new String[0] : additionalAdminUsernames.split(","))
+                .map(this::cleanUsername)
+                .filter(username -> username.matches("[a-z0-9._-]{3,50}"))
+                .filter(username -> !username.equals(configuredOwner))
+                .distinct()
+                .toList();
     }
 
     private boolean isConfiguredOwner(String username, String email) {

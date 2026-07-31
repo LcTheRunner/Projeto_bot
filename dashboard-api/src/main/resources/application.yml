@@ -25,6 +25,7 @@ dashboard:
   admin-password: ${DASHBOARD_PASSWORD:}
   owner-username: ${DASHBOARD_OWNER_USERNAME:}
   owner-email: ${DASHBOARD_OWNER_EMAIL:}
+  additional-admin-usernames: ${DASHBOARD_ADDITIONAL_ADMIN_USERNAMES:}
   session-days: 7
   public-url: ${DASHBOARD_PUBLIC_URL:http://localhost:4200}
   mail-from: ${REPORT_FROM:${SMTP_USER:}}

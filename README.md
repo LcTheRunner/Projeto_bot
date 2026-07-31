@@ -78,7 +78,10 @@ O proprietário permitido é definido pela combinação exata de
 `DASHBOARD_OWNER_USERNAME` e `DASHBOARD_OWNER_EMAIL`. As duas variáveis são
 obrigatórias e a conta correspondente precisa estar ativa e com o e-mail
 confirmado. Na inicialização, essa conta é promovida automaticamente como
-administradora única e a função administrativa é removida das demais contas.
+proprietária. Usuários adicionais informados em
+`DASHBOARD_ADDITIONAL_ADMIN_USERNAMES` (separados por vírgula) também recebem
+acesso administrativo quando estão ativos e com o e-mail confirmado; a função
+administrativa é removida das demais contas.
 O sistema não usa nem armazena a senha do proprietário nessa configuração.
 
 Um administrador existente também pode acionar a transferência pela página.

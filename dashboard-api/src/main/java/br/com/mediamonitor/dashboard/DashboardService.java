@@ -78,20 +78,25 @@ public class DashboardService {
 
         List<String> userKeywords = jdbc.queryForList(
                 "SELECT keyword FROM user_keywords WHERE user_id = ?", String.class, userId);
-        rows = rows.stream()
-                .filter(row -> userKeywords.stream().anyMatch(term -> contains(row.title + " " + row.body, term)))
+        List<String> normalizedUserKeywords = userKeywords.stream()
+                .map(this::normalize)
+                .filter(value -> !value.isBlank())
+                .distinct()
                 .toList();
-        List<String> wantedKeywords = clean(keywords);
+        rows = rows.stream()
+                .filter(row -> normalizedUserKeywords.stream().anyMatch(row.searchableText::contains))
+                .toList();
+        List<String> wantedKeywords = clean(keywords).stream().map(this::normalize).toList();
         List<String> wantedSources = clean(sources);
         List<String> wantedSections = clean(sections);
         List<Integer> wantedRisks = risks == null
                 ? List.of()
                 : risks.stream().filter(Objects::nonNull).filter(List.of(0, 5, 10)::contains).distinct().toList();
         List<String> wantedTones = clean(tones);
-        String wantedQuery = clean(query);
+        String wantedQuery = clean(query) == null ? null : normalize(query);
         rows = rows.stream()
                 .filter(r -> wantedKeywords.isEmpty()
-                        || wantedKeywords.stream().anyMatch(term -> contains(r.title + " " + r.body, term)))
+                        || wantedKeywords.stream().anyMatch(r.searchableText::contains))
                 .filter(r -> wantedSources.isEmpty()
                         || wantedSources.stream().anyMatch(value -> equalsIgnoreCase(r.source, value)))
                 .filter(r -> wantedSections.isEmpty()
@@ -99,10 +104,7 @@ public class DashboardService {
                 .filter(r -> wantedRisks.isEmpty() || wantedRisks.contains(r.risk))
                 .filter(r -> wantedTones.isEmpty()
                         || wantedTones.stream().anyMatch(value -> equalsIgnoreCase(r.tone, value)))
-                .filter(r -> wantedQuery == null || contains(
-                        r.title + " " + r.body + " " + r.source + " " + r.journalist,
-                        wantedQuery
-                ))
+                .filter(r -> wantedQuery == null || r.searchableText.contains(wantedQuery))
                 .filter(r -> locations == null || locations.isEmpty() || matchesLocations(r, locations))
                 .toList();
 
@@ -129,11 +131,16 @@ public class DashboardService {
     }
 
     private ArticleRow row(ResultSet rs) throws java.sql.SQLException {
+        String title = rs.getString("title");
+        String body = rs.getString("body");
+        String source = rs.getString("source");
+        String journalist = rs.getString("journalist");
         return new ArticleRow(
-                rs.getLong("id"), rs.getString("title"), rs.getString("url"), rs.getString("body"), rs.getString("source"),
-                rs.getString("section"), rs.getString("journalist"), rs.getTimestamp("published_at").toLocalDateTime(),
+                rs.getLong("id"), title, rs.getString("url"), body, source,
+                rs.getString("section"), journalist, rs.getTimestamp("published_at").toLocalDateTime(),
                 rs.getInt("risk_score"), rs.getString("tone"), rs.getDouble("impact_score"),
-                jsonList(rs.getString("matched_keywords")), jsonList(rs.getString("evidence"))
+                jsonList(rs.getString("matched_keywords")), jsonList(rs.getString("evidence")),
+                normalize(title + " " + body + " " + source + " " + journalist)
         );
     }
 
@@ -150,7 +157,8 @@ public class DashboardService {
     private List<Map<String, Object>> keywordCount(List<ArticleRow> rows, List<String> userKeywords) {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (String term : userKeywords) {
-            long total = rows.stream().filter(row -> contains(row.title + " " + row.body, term)).count();
+            String normalizedTerm = normalize(term);
+            long total = rows.stream().filter(row -> row.searchableText.contains(normalizedTerm)).count();
             if (total > 0) counts.put(term, total);
         }
         return ranked(counts, 20);
@@ -194,13 +202,13 @@ public class DashboardService {
         return normalizedText.contains(normalizedTerm);
     }
     private boolean isRioDeJaneiro(ArticleRow row) {
-        String text = normalize(row.title + " " + row.body + " " + row.source);
+        String text = row.searchableText;
         return java.util.regex.Pattern.compile("(^|\\W)rj($|\\W)").matcher(text).find()
                 || RJ_LOCATIONS.stream().map(this::normalize).anyMatch(text::contains);
     }
     private boolean matchesMunicipality(ArticleRow row, String municipality) {
         String wanted = municipality == null ? "" : municipality.replace(" (capital)", "");
-        return contains(row.title + " " + row.body + " " + row.source, wanted);
+        return row.searchableText.contains(normalize(wanted));
     }
     private boolean matchesLocations(ArticleRow row, List<String> locations) {
         if (locations.stream().anyMatch("estado_rj"::equalsIgnoreCase)) return isRioDeJaneiro(row);
@@ -226,7 +234,7 @@ public class DashboardService {
 
     private record ArticleRow(long id, String title, String url, String body, String source, String section, String journalist,
                               LocalDateTime publishedAt, int risk, String tone, double impact,
-                              List<String> keywords, List<String> evidence) {
+                              List<String> keywords, List<String> evidence, String searchableText) {
         Map<String, Object> toMap() {
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("id", id); map.put("title", title); map.put("url", url); map.put("source", source);
