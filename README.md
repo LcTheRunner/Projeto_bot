@@ -25,8 +25,9 @@ usuário, e-mail e senha; administradores também podem criar contas pelo
 painel. Cada usuário possui uma lista independente de
 palavras-chave. O coletor pesquisa a união dos termos ativos, enquanto a API
 analítica entrega a cada conta apenas as notícias que correspondem à sua lista.
-As 17 palavras-chave oficiais são entregues por padrão a todas as contas, mas
-cada usuário pode removê-las. A tela aceita inclusão e remoção em lote, elimina
+As 19 palavras-chave oficiais são entregues por padrão a todas as contas,
+incluindo **Movimento Cultural Social** e **MCS**, mas cada usuário pode
+removê-las. A tela aceita inclusão e remoção em lote, elimina
 duplicatas e reconhece vírgula, ponto, ponto e vírgula, dois-pontos, aspas e
 quebras de linha como separadores.
 
@@ -88,6 +89,28 @@ encontrada.
 A exclusão é permanente, não permite remover a própria conta nem o último
 administrador e também remove sessões, palavras-chave e agendamentos vinculados
 por integridade referencial.
+
+## Alertas institucionais do MCS
+
+As expressões **Movimento Cultural Social** e **MCS** são monitoradas
+globalmente e não dependem das palavras-chave pessoais. O worker executa uma
+busca prioritária no Google Notícias e nos feeds RSS configurados a cada 15
+minutos, além da coleta normal. Na coleta diária, o conteúdo completo dos itens
+RSS também é verificado, mesmo quando a menção não aparece no título ou no
+resumo. A sigla é tratada como termo isolado: `MCS`, `(MCS)` e `MCS-RJ` são
+aceitos, enquanto fragmentos como `AMCS`, `MCS2` e `MCS_2026` são ignorados.
+Contextos explicitamente financeiros ou de outras expansões conhecidas da
+sigla, como **Marcus Corp** e **Monte Carlo**, também são descartados para não
+acionar o sino com notícias sem relação institucional.
+
+Quando uma ocorrência é encontrada, o sistema preserva por **90 dias** um
+resumo próprio do alerta, mesmo depois que a notícia sai da janela operacional
+de 72 horas. Todos os usuários autenticados enxergam o mesmo histórico pelo
+sino do cabeçalho, mas o estado lido/não lido pertence exclusivamente a cada
+conta. Alertas anteriores à criação de uma conta aparecem no histórico sem
+inflar seu contador de não lidos. O painel consulta novas ocorrências a cada
+minuto, permite marcar uma notícia ou todo o histórico como lido e abre o
+endereço original em uma nova aba.
 
 ## Como funciona
 

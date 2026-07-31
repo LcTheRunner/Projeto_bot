@@ -46,6 +46,10 @@ class AuthServiceOwnerBootstrapTests {
                 contains("migration_key = 'default_keywords_v2'"),
                 eq(Integer.class)
         )).thenReturn(1);
+        when(jdbc.queryForObject(
+                contains("migration_key = 'default_keywords_mcs_v1'"),
+                eq(Integer.class)
+        )).thenReturn(1);
 
         service.initialize();
 

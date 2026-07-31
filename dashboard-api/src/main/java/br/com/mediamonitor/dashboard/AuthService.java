@@ -37,8 +37,11 @@ public class AuthService {
             "empresa que investe em ONG", "empresas que investem em ONG",
             "empresa que investe no meio ambiente", "empresas que investem no meio ambiente",
             "empresa que investe em esporte", "empresas que investem em esporte",
-            "Lei Rouanet", "Lei Rounet", "lei de incentivo ao esporte", "Prefeitura de Maricá"
+            "Lei Rouanet", "Lei Rounet", "lei de incentivo ao esporte", "Prefeitura de Maricá",
+            "Movimento Cultural Social", "MCS"
     );
+    private static final List<String> MCS_DEFAULT_KEYWORDS =
+            List.of("Movimento Cultural Social", "MCS");
 
     private final JdbcTemplate jdbc;
     private final JavaMailSender mailSender;
@@ -138,6 +141,15 @@ public class AuthService {
         if (defaultsApplied != null && defaultsApplied == 0) {
             jdbc.queryForList("SELECT id FROM dashboard_users", Long.class).forEach(this::seedKeywords);
             jdbc.update("INSERT INTO system_migrations(migration_key) VALUES ('default_keywords_v2')");
+        }
+        Integer mcsDefaultsApplied = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM system_migrations WHERE migration_key = 'default_keywords_mcs_v1'", Integer.class);
+        if (mcsDefaultsApplied != null && mcsDefaultsApplied == 0) {
+            MCS_DEFAULT_KEYWORDS.forEach(keyword -> jdbc.update("""
+                    INSERT IGNORE INTO user_keywords(user_id, keyword)
+                    SELECT id, ? FROM dashboard_users
+                    """, keyword));
+            jdbc.update("INSERT IGNORE INTO system_migrations(migration_key) VALUES ('default_keywords_mcs_v1')");
         }
         enforceConfiguredOwnerExclusivity();
     }

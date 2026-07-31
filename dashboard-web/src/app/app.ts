@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { NotificationCenterComponent } from './notification-center.component';
 import { ReportOverview, ReportPdfService } from './report-pdf.service';
 
 interface Point { label: string; value: number; }
@@ -33,7 +34,7 @@ type DashboardPage = 'overview' | 'keywords' | 'sources' | 'news' | 'schedules' 
 
 @Component({
   selector: 'app-root',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, NotificationCenterComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })

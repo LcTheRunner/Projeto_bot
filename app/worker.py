@@ -6,7 +6,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from app.database import Base, engine, SessionLocal
-from app.services import collect
+from app.services import collect, collect_mcs_alerts
 from app.reports import send_report
 
 logging.basicConfig(level=logging.INFO)
@@ -17,6 +17,9 @@ def job():
 
 def report_job():
     with SessionLocal() as db: logging.info("Relatório: %s", send_report(db))
+
+def mcs_alert_job():
+    with SessionLocal() as db: logging.info("Alertas MCS: %s", collect_mcs_alerts(db))
 
 def scheduled_email_job():
     now = datetime.now(LOCAL_TZ).replace(tzinfo=None)
@@ -110,6 +113,16 @@ if __name__ == "__main__":
     scheduler = BlockingScheduler(timezone="America/Sao_Paulo")
     scheduler.add_job(job, "cron", hour=4, minute=30, id="coleta_diaria", replace_existing=True)
     scheduler.add_job(report_job, "cron", hour=7, minute=0, id="relatorio_diario", replace_existing=True)
+    scheduler.add_job(
+        mcs_alert_job,
+        "interval",
+        minutes=15,
+        id="alertas_mcs",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        next_run_time=datetime.now(LOCAL_TZ),
+    )
     scheduler.add_job(
         scheduled_email_job,
         "interval",

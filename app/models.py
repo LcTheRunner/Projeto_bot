@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, DateTime, Integer, Float, ForeignKey
+from sqlalchemy import String, Text, DateTime, Integer, BigInteger, Float, ForeignKey, Index, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -29,3 +29,28 @@ class Classification(Base):
     matched_keywords: Mapped[str] = mapped_column(Text, default="[]")
     evidence: Mapped[str] = mapped_column(Text, default="[]")
     article: Mapped[Article] = relationship(back_populates="classification")
+
+class McsAlert(Base):
+    __tablename__ = "mcs_alerts"
+    __table_args__ = (Index("idx_mcs_alert_detected", "detected_at", "id"),)
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    article_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
+    url_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    title: Mapped[str] = mapped_column(String(1000))
+    url: Mapped[str] = mapped_column(String(1000))
+    source: Mapped[str] = mapped_column(String(255))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=now,
+        server_default=func.now(),
+    )
+    matched_terms_json: Mapped[str] = mapped_column(Text)
+    match_excerpt: Mapped[str | None] = mapped_column(String(600), nullable=True)
+    risk_score: Mapped[int] = mapped_column(Integer, default=0)
+    impact_score: Mapped[float] = mapped_column(Float, default=0)

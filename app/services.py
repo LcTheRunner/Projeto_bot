@@ -1,14 +1,32 @@
 import json
 import re
+import hashlib
+import html
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select, text
+from sqlalchemy import func, insert, select, text
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.classifier import classify, is_relevant, normalize, result_json
 from app.collectors import rss_items, google_news_items, google_items, instagram_items, enrich
 from app.config import yaml_config
-from app.models import Article, Classification
+from app.models import Article, Classification, McsAlert
 
 NEWS_WINDOW_HOURS = 72
+ALERT_HISTORY_DAYS = 90
+GLOBAL_ALERT_TERMS = ["Movimento Cultural Social", "MCS"]
+GLOBAL_ALERT_QUERIES = [
+    '"Movimento Cultural Social"',
+    '"MCS" -preço -cotação -ticker -"Marcus Corp" -"Monte Carlo"',
+]
+_MCS_FULL_NAME = re.compile(r"(?<!\w)movimento\s+cultural\s+social(?!\w)", re.IGNORECASE)
+_MCS_ACRONYM = re.compile(r"(?<!\w)mcs(?!\w)", re.IGNORECASE)
+_MCS_UNRELATED_CONTEXT = re.compile(
+    r"marcus\s+corp|monte\s+carlo|tradingkey|preco\s*:|var\.\s*%|"
+    r"cotacao|ticker|nyse|nasdaq|market\s+cap|bolsa\s+de\s+valores",
+    re.IGNORECASE,
+)
 RJ_TERMS = [
     "rio de janeiro",
     "estado do rio",
@@ -42,6 +60,173 @@ def recent_cutoff() -> datetime:
 def is_recent(value: datetime | None) -> bool:
     return value is None or _aware(value) >= recent_cutoff()
 
+def _alert_plain_text(title: str, body: str) -> str:
+    value = html.unescape(f"{title or ''}. {body or ''}")
+    value = re.sub(r"<[^>]+>", " ", value)
+    value = re.sub(r"https?://\S+|www\.\S+", " ", value, flags=re.IGNORECASE)
+    value = re.sub(r"\b\S+@\S+\b", " ", value)
+    value = re.sub(
+        r"(?<![@\w])(?:[\w-]+\.)+[a-z]{2,}(?:/\S*)?",
+        " ",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(r"(?<!\w)[@#][\w.-]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+def mcs_alert_terms(title: str, body: str) -> list[str]:
+    text = normalize(_alert_plain_text(title, body))
+    matches = []
+    full_name = bool(_MCS_FULL_NAME.search(text))
+    if full_name:
+        matches.append("Movimento Cultural Social")
+    if _MCS_ACRONYM.search(text) and (full_name or not _MCS_UNRELATED_CONTEXT.search(text)):
+        matches.append("MCS")
+    return matches
+
+def _mcs_alert_excerpt(title: str, body: str) -> str:
+    text = _alert_plain_text(title, body)
+    matches = [match for pattern in (_MCS_FULL_NAME, _MCS_ACRONYM) if (match := pattern.search(text))]
+    if not matches:
+        return text[:520]
+    match = min(matches, key=lambda item: item.start())
+    start = max(0, match.start() - 150)
+    end = min(len(text), match.end() + 260)
+    prefix = "… " if start else ""
+    suffix = " …" if end < len(text) else ""
+    return f"{prefix}{text[start:end].strip()}{suffix}"[:600]
+
+def _store_mcs_alert(
+    db: Session,
+    article: Article,
+    classification: Classification,
+    snapshot: dict | None = None,
+) -> bool:
+    snapshot = snapshot or {}
+    title = str(snapshot.get("title") or article.title)
+    body = str(snapshot.get("body") or article.body)
+    url = str(snapshot.get("url") or article.url)
+    source = str(snapshot.get("source") or article.source)
+    published_at = snapshot.get("published_at") or article.published_at
+    terms = mcs_alert_terms(title, body)
+    if not terms:
+        return False
+    url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    values = {
+        "article_id": article.id,
+        "url_hash": url_hash,
+        "title": title,
+        "url": url,
+        "source": source,
+        "published_at": published_at,
+        "matched_terms_json": json.dumps(terms, ensure_ascii=False),
+        "match_excerpt": _mcs_alert_excerpt(title, body),
+        "risk_score": classification.risk_score,
+        "impact_score": classification.impact_score,
+    }
+    dialect = db.get_bind().dialect.name
+    if dialect in {"mysql", "mariadb"}:
+        statement = mysql_insert(McsAlert).values(**values).prefix_with("IGNORE")
+        return db.execute(statement).rowcount == 1
+    if dialect == "sqlite":
+        statement = sqlite_insert(McsAlert).values(**values).on_conflict_do_nothing()
+        return db.execute(statement).rowcount == 1
+    try:
+        with db.begin_nested():
+            return db.execute(insert(McsAlert).values(**values)).rowcount == 1
+    except IntegrityError:
+        return False
+
+def _deduplicate_items(items: list[dict]) -> list[dict]:
+    unique: dict[str, dict] = {}
+    for item in items:
+        url = item.get("url")
+        if not url:
+            continue
+        previous = unique.get(url)
+        if previous is None:
+            unique[url] = item
+            continue
+        previous_priority = bool(previous.get("_global_alert_candidate"))
+        current_priority = bool(item.get("_global_alert_candidate"))
+        if current_priority and not previous_priority:
+            preferred = item
+        elif previous_priority and not current_priority:
+            preferred = previous
+        else:
+            previous_body = str(previous.get("body") or "")
+            current_body = str(item.get("body") or "")
+            preferred = item if len(current_body) > len(previous_body) else previous
+        merged = dict(preferred)
+        merged["_global_alert_candidate"] = previous_priority or current_priority
+        merged["_skip_enrich"] = bool(
+            previous.get("_skip_enrich", False)
+            and item.get("_skip_enrich", False)
+        )
+        unique[url] = merged
+    return list(unique.values())
+
+def _store_existing_candidate(
+    db: Session,
+    article: Article,
+    item: dict,
+    skip_enrich: bool,
+    source_weight: float = 1.0,
+) -> bool:
+    url_hash = hashlib.sha256(article.url.encode("utf-8")).hexdigest()
+    if db.scalar(select(McsAlert.id).where(McsAlert.url_hash == url_hash)):
+        return False
+    candidate = dict(item)
+    if not skip_enrich:
+        candidate = enrich(candidate)
+    candidate["body"] = "\n\n".join(dict.fromkeys(filter(None, [
+        article.title,
+        article.body,
+        candidate.get("body"),
+    ])))
+    if not mcs_alert_terms(str(candidate.get("title") or article.title), candidate["body"]):
+        return False
+    result = classify(
+        str(candidate.get("title") or article.title),
+        candidate["body"],
+        source_weight=source_weight,
+        extra_terms=GLOBAL_ALERT_TERMS,
+    )
+    classification = Classification(
+        risk_score=result.risk_score,
+        impact_score=result.impact_score,
+    )
+    created = _store_mcs_alert(db, article, classification, candidate)
+    if created:
+        db.commit()
+    return created
+
+def prune_mcs_alerts(db: Session) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=ALERT_HISTORY_DAYS)
+    expired = db.scalars(select(McsAlert).where(McsAlert.detected_at < cutoff)).all()
+    for alert in expired:
+        db.delete(alert)
+    if expired:
+        db.commit()
+    return len(expired)
+
+def backfill_mcs_alerts(db: Session) -> dict:
+    removed = prune_mcs_alerts(db)
+    rows = db.execute(
+        select(Article, Classification)
+        .join(Classification)
+        .where(Article.published_at >= recent_cutoff())
+        .order_by(Article.published_at, Article.id)
+    ).all()
+    created = sum(_store_mcs_alert(db, article, classification) for article, classification in rows)
+    if created:
+        db.commit()
+    return {
+        "analisadas": len(rows),
+        "alertas_criados": created,
+        "alertas_expirados": removed,
+    }
+
 def geographic_scope(article: Article) -> str:
     text = normalize(f"{article.title}. {article.body}. {article.source}")
     if re.search(r"(?<!\w)marica(?!\w)", text):
@@ -58,25 +243,70 @@ def prune_expired(db: Session) -> int:
         db.commit()
     return len(expired)
 
-def save_item(db: Session, item: dict, user_keywords: list[str] | None = None) -> Article | None:
-    if not item.get("url") or db.scalar(select(Article).where(Article.url == item["url"])): return None
+def save_item(
+    db: Session,
+    item: dict,
+    user_keywords: list[str] | None = None,
+    alert_only: bool = False,
+) -> Article | None:
+    if not item.get("url"): return None
     item = dict(item)
+    relevance_terms = list(dict.fromkeys([*GLOBAL_ALERT_TERMS, *(user_keywords or [])]))
     source_weight = float(item.pop("_source_weight", 1.0))
     skip_enrich = bool(item.pop("_skip_enrich", False))
+    global_alert_candidate = bool(item.pop("_global_alert_candidate", False))
     if not is_recent(item.get("published_at")): return None
-    if not is_relevant(item.get("title", ""), item.get("body", ""), user_keywords): return None
+    existing = db.scalar(select(Article).where(Article.url == item["url"]))
+    if existing:
+        if global_alert_candidate:
+            _store_existing_candidate(db, existing, item, skip_enrich, source_weight)
+        return None
+    feed_matches_scope = (
+        bool(mcs_alert_terms(item.get("title", ""), item.get("body", "")))
+        if alert_only
+        else is_relevant(item.get("title", ""), item.get("body", ""), relevance_terms)
+    )
+    if (
+        not global_alert_candidate
+        and not feed_matches_scope
+    ):
+        return None
     if not skip_enrich:
         item = enrich(item)
-    result = classify(item["title"], item["body"], source_weight=source_weight, extra_terms=user_keywords)
-    if not is_relevant(item["title"], item["body"], user_keywords): return None
+    result = classify(item["title"], item["body"], source_weight=source_weight, extra_terms=relevance_terms)
+    if alert_only:
+        if not mcs_alert_terms(item["title"], item["body"]): return None
+    elif not is_relevant(item["title"], item["body"], relevance_terms):
+        return None
     keywords, evidence = result_json(result)
     article = Article(**item, section=result.section)
-    article.classification = Classification(risk_score=result.risk_score, tone=result.tone, impact_score=result.impact_score, matched_keywords=keywords, evidence=evidence)
-    db.add(article); db.commit(); db.refresh(article)
+    classification = Classification(
+        risk_score=result.risk_score,
+        tone=result.tone,
+        impact_score=result.impact_score,
+        matched_keywords=keywords,
+        evidence=evidence,
+    )
+    article.classification = classification
+    try:
+        db.add(article)
+        db.flush()
+        _store_mcs_alert(db, article, classification)
+        db.commit()
+    except IntegrityError:
+        # Outra coleta pode ter inserido a mesma URL entre a consulta e o flush.
+        db.rollback()
+        if global_alert_candidate:
+            winner = db.scalar(select(Article).where(Article.url == item["url"]))
+            if winner:
+                _store_existing_candidate(db, winner, item, skip_enrich=True, source_weight=source_weight)
+        return None
+    db.refresh(article)
     return article
 
 def collect(db: Session, extra_keywords: list[str] | None = None) -> dict:
     removed = prune_expired(db)
+    removed_alerts = prune_mcs_alerts(db)
     sources = yaml_config("sources.yaml")
     user_keywords = _user_keywords(db)
     known = {normalize(value) for value in user_keywords}
@@ -86,15 +316,23 @@ def collect(db: Session, extra_keywords: list[str] | None = None) -> dict:
         if clean and normalized not in known:
             user_keywords.append(clean)
             known.add(normalized)
-    items = rss_items() + google_news_items(user_keywords)
+    collection_terms = list(dict.fromkeys([*GLOBAL_ALERT_TERMS, *user_keywords]))
+    items = rss_items(global_alert_scan=True) + google_news_items(
+        user_keywords,
+        priority_queries=GLOBAL_ALERT_QUERIES,
+    )
     if sources.get("google", {}).get("enabled", False):
         for query in sources.get("google", {}).get("queries", []): items += google_items(query)
     if sources.get("instagram", {}).get("enabled", False):
         for hashtag in yaml_config("keywords.yaml").get("hashtags_instagram", []): items += instagram_items(hashtag)
-    unique = list({item.get("url"): item for item in items if item.get("url")}.values())
+    unique = _deduplicate_items(items)
     recent = [item for item in unique if is_recent(item.get("published_at"))]
-    relevant = [item for item in recent if is_relevant(item.get("title", ""), item.get("body", ""), user_keywords)]
-    saved = sum(save_item(db, item, user_keywords) is not None for item in relevant)
+    relevant = [
+        item for item in recent
+        if item.get("_global_alert_candidate")
+        or is_relevant(item.get("title", ""), item.get("body", ""), collection_terms)
+    ]
+    saved = sum(save_item(db, item, collection_terms) is not None for item in relevant)
     return {
         "encontrados": len(unique),
         "ultimas_72h": len(recent),
@@ -102,6 +340,38 @@ def collect(db: Session, extra_keywords: list[str] | None = None) -> dict:
         "descartados": len(unique) - len(relevant),
         "novos": saved,
         "expirados_removidos": removed,
+        "alertas_expirados": removed_alerts,
+    }
+
+def collect_mcs_alerts(db: Session) -> dict:
+    removed = prune_mcs_alerts(db)
+    items = rss_items() + google_news_items(
+        priority_queries=GLOBAL_ALERT_QUERIES,
+        priority_only=True,
+    )
+    unique = _deduplicate_items(items)
+    recent = [item for item in unique if is_recent(item.get("published_at"))]
+    relevant = [
+        item for item in recent
+        if item.get("_global_alert_candidate")
+        or mcs_alert_terms(item.get("title", ""), item.get("body", ""))
+    ]
+    for item in relevant:
+        item["_global_alert_candidate"] = True
+        item.setdefault("_skip_enrich", False)
+    alerts_before = db.scalar(select(func.count()).select_from(McsAlert)) or 0
+    saved_articles = sum(
+        save_item(db, item, GLOBAL_ALERT_TERMS, alert_only=True) is not None
+        for item in relevant
+    )
+    alerts_after = db.scalar(select(func.count()).select_from(McsAlert)) or 0
+    return {
+        "encontrados": len(unique),
+        "ultimas_72h": len(recent),
+        "relevantes_mcs": len(relevant),
+        "novos": max(0, alerts_after - alerts_before),
+        "novas_noticias": saved_articles,
+        "alertas_expirados": removed,
     }
 
 def _user_keywords(db: Session) -> list[str]:

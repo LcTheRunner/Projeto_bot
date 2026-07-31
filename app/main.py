@@ -5,12 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 from app.database import Base, engine, get_db
 from app.models import Article
-from app.services import backfill_journalists, collect, recent_cutoff, recent_stats
+from app.services import backfill_journalists, backfill_mcs_alerts, collect, recent_cutoff, recent_stats
 from app.reports import send_report
 
 @asynccontextmanager
 async def lifespan(app):
     Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        backfill_mcs_alerts(db)
     yield
 
 app = FastAPI(title="Monitor de Impacto Midiático", version="1.0.0", lifespan=lifespan)

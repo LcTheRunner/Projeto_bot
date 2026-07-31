@@ -25,8 +25,11 @@ describe('App', () => {
       byRisk: [], byTone: [], bySource: [], bySection: [], byKeyword: [], timeline: [], articles: []
     });
     fixture.detectChanges();
+    http.expectOne('/dashboard-api/alerts/unread-count').flush({ unreadCount: 2 });
+    fixture.detectChanges();
     expect(fixture.componentInstance).toBeTruthy();
     expect((fixture.nativeElement as HTMLElement).querySelector('h1')?.textContent).toContain('Panorama de impacto midiático');
+    expect((fixture.nativeElement as HTMLElement).querySelector('.alert-badge')?.textContent).toContain('2');
     const periodOptions = [...(fixture.nativeElement as HTMLElement).querySelectorAll<HTMLOptionElement>('.period-select option')]
       .map(option => option.textContent?.trim());
     expect(periodOptions).toEqual(['24 horas', '48 horas', '7 dias', '30 dias']);
@@ -89,6 +92,8 @@ describe('App', () => {
       byRisk: [], byTone: [], bySource: [], bySection: [], byKeyword: [], timeline: [], articles: []
     });
     fixture.detectChanges();
+    http.expectOne('/dashboard-api/alerts/unread-count').flush({ unreadCount: 0 });
+    fixture.detectChanges();
     expect(fixture.componentInstance.page()).toBe('overview');
     expect(window.location.pathname).toBe('/');
     expect((fixture.nativeElement as HTMLElement).querySelector('.admin-intro')).toBeNull();
@@ -108,6 +113,8 @@ describe('App', () => {
       id: 1, username: 'equipe', displayName: 'Administrador MCS', email: 'equipe@example.com',
       emailVerified: true, admin: true, active: true, createdAt: new Date().toISOString(), ownerCandidate: false
     }]);
+    fixture.detectChanges();
+    http.expectOne('/dashboard-api/alerts/unread-count').flush({ unreadCount: 1 });
     fixture.detectChanges();
     expect(fixture.componentInstance.page()).toBe('admin');
     expect((fixture.nativeElement as HTMLElement).querySelector('.admin-directory')).toBeTruthy();

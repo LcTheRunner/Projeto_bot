@@ -44,6 +44,7 @@
           <button *ngIf="page() !== 'admin'" class="utility-button geography-button" (click)="openGeography()">⌖ {{ geographyLabel() }}</button>
           <button *ngIf="page() === 'overview' || page() === 'news'" class="utility-button" (click)="openReport()" [disabled]="loading()">PDF</button>
           <button *ngIf="page() !== 'admin'" class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button>
+          <app-notification-center></app-notification-center>
           <button class="logout-button" (click)="logout()">Sair</button>
         </div>
       </header>

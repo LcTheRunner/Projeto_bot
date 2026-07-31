@@ -38,13 +38,22 @@ def _feed_items(name: str, url: str, weight: float = 1.0, publisher_from_entry: 
         })
     return output
 
-def rss_items() -> list[dict]:
+def rss_items(global_alert_scan: bool = False) -> list[dict]:
     output = []
     for source in yaml_config("sources.yaml").get("rss", []):
-        output.extend(_feed_items(source["nome"], source["url"], float(source.get("peso", 1.0))))
+        items = _feed_items(source["nome"], source["url"], float(source.get("peso", 1.0)))
+        if global_alert_scan:
+            for item in items:
+                item["_global_alert_candidate"] = True
+                item["_skip_enrich"] = False
+        output.extend(items)
     return output
 
-def google_news_items(extra_queries: list[str] | None = None) -> list[dict]:
+def google_news_items(
+    extra_queries: list[str] | None = None,
+    priority_queries: list[str] | None = None,
+    priority_only: bool = False,
+) -> list[dict]:
     cfg = yaml_config("sources.yaml").get("google_news", {})
     if not cfg.get("enabled", False):
         return []
@@ -53,7 +62,17 @@ def google_news_items(extra_queries: list[str] | None = None) -> list[dict]:
     days = math.ceil(hours / 24)
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     outlet_queries = [outlet["query"] for outlet in cfg.get("outlets", []) if outlet.get("query")]
-    queries = list(dict.fromkeys([*cfg.get("queries", []), *outlet_queries, *(extra_queries or [])]))[:80]
+    if priority_only:
+        candidates = priority_queries or []
+    else:
+        candidates = [
+            *(priority_queries or []),
+            *cfg.get("queries", []),
+            *outlet_queries,
+            *(extra_queries or []),
+        ]
+    queries = list(dict.fromkeys(candidates))[:80]
+    priority_set = set(priority_queries or [])
     for query in queries:
         params = urlencode({"q": f"{query} when:{days}d", "hl": "pt-BR", "gl": "BR", "ceid": "BR:pt-419"})
         items = _feed_items(
@@ -62,8 +81,12 @@ def google_news_items(extra_queries: list[str] | None = None) -> list[dict]:
             float(cfg.get("peso", 1.0)),
             publisher_from_entry=True,
         )
+        is_global_alert_query = query in priority_set
         for item in items:
-            item["_skip_enrich"] = True
+            # As duas consultas institucionais são poucas e podem ser enriquecidas
+            # antes da decisão final, inclusive quando o termo só aparece no texto.
+            item["_skip_enrich"] = not is_global_alert_query
+            item["_global_alert_candidate"] = is_global_alert_query
         output.extend(item for item in items if _aware(item["published_at"]) >= cutoff)
     return output
 

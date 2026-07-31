@@ -1,0 +1,105 @@
+<div class="notification-center">
+  <button
+    #bellButton
+    type="button"
+    class="alert-bell"
+    [class.has-unread]="unreadCount() > 0"
+    [attr.aria-label]="ariaLabel()"
+    [attr.aria-expanded]="open()"
+    aria-controls="mcs-alert-panel"
+    aria-haspopup="dialog"
+    (click)="toggle()"
+  >
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+    </svg>
+    <span class="alert-badge" *ngIf="unreadCount()" aria-hidden="true">{{ badge() }}</span>
+  </button>
+  <span class="visually-hidden" aria-live="polite">{{ announcement() }}</span>
+</div>
+
+<div *ngIf="open()" class="alert-overlay" aria-hidden="true" (click)="close()"></div>
+
+<aside
+  #alertPanel
+  *ngIf="open()"
+  id="mcs-alert-panel"
+  class="alert-panel"
+  tabindex="-1"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="mcs-alert-title"
+>
+  <header class="alert-panel-head">
+    <div>
+      <p>VIGILÂNCIA INSTITUCIONAL</p>
+      <h2 id="mcs-alert-title">Menções ao MCS</h2>
+      <span>Movimento Cultural Social e sigla MCS</span>
+    </div>
+    <button #closeButton type="button" class="alert-close" aria-label="Fechar alertas" (click)="close()">×</button>
+  </header>
+
+  <div class="alert-toolbar">
+    <div>
+      <strong>{{ unreadCount() }}</strong>
+      <span>{{ unreadCount() === 1 ? 'menção não lida' : 'menções não lidas' }}</span>
+    </div>
+    <button type="button" (click)="markAllRead()" [disabled]="!unreadCount() || markingAll()">
+      {{ markingAll() ? 'Marcando…' : 'Marcar todas como lidas' }}
+    </button>
+  </div>
+
+  <div class="alert-state" role="status" *ngIf="loading()"><span></span>Buscando as menções mais recentes…</div>
+  <div class="alert-state error" role="alert" *ngIf="error()">
+    <p>{{ error() }}</p>
+    <button type="button" (click)="loadAlerts(true)">Tentar novamente</button>
+  </div>
+
+  <ul class="alert-list" *ngIf="!loading() && items().length">
+    <li *ngFor="let alert of items(); trackBy: trackAlert">
+      <a
+        class="alert-item"
+        [class.unread]="!alert.read"
+        [href]="alert.url"
+        target="_blank"
+        rel="noopener noreferrer"
+        (click)="markRead(alert)"
+      >
+        <div class="alert-item-top">
+          <span class="new-label" *ngIf="!alert.read">NOVA</span>
+          <span class="term-label">{{ matchedTerms(alert) }}</span>
+          <span class="risk-label" [ngClass]="riskClass(alert.risk)">Risco {{ alert.risk }}</span>
+        </div>
+        <strong>{{ alert.title }}</strong>
+        <p *ngIf="alert.excerpt">{{ alert.excerpt }}</p>
+        <footer>
+          <span>{{ alert.source }}</span>
+          <time [attr.datetime]="alert.publishedAt || alert.detectedAt">
+            {{ (alert.publishedAt || alert.detectedAt) | date:'dd/MM/yyyy · HH:mm' }}
+          </time>
+          <b>Abrir notícia ↗</b>
+        </footer>
+      </a>
+    </li>
+  </ul>
+
+  <div class="alert-empty" *ngIf="!loading() && !error() && !items().length">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+    </svg>
+    <strong>Nenhuma menção encontrada</strong>
+    <p>Quando o monitoramento localizar “Movimento Cultural Social” ou “MCS”, a notícia aparecerá aqui.</p>
+  </div>
+
+  <button
+    *ngIf="nextCursor() && !loading()"
+    type="button"
+    class="load-more"
+    [disabled]="loadingMore()"
+    (click)="loadAlerts(false)"
+  >
+    {{ loadingMore() ? 'Carregando…' : 'Carregar histórico anterior' }}
+  </button>
+
+  <p class="alert-footnote">O histórico é global, mas o estado de leitura é exclusivo da sua conta.</p>
+</aside>
