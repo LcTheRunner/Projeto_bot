@@ -18,8 +18,8 @@ def job():
 def report_job():
     with SessionLocal() as db: logging.info("Relatório: %s", send_report(db))
 
-def mcs_alert_job():
-    with SessionLocal() as db: logging.info("Alertas MCS: %s", collect_mcs_alerts(db))
+def institutional_alert_job():
+    with SessionLocal() as db: logging.info("Alertas institucionais: %s", collect_mcs_alerts(db))
 
 def scheduled_email_job():
     now = datetime.now(LOCAL_TZ).replace(tzinfo=None)
@@ -59,7 +59,9 @@ def scheduled_email_job():
                 logging.info("Coleta previa concluida: %s", result)
 
             due = db.execute(text("""
-                SELECT s.id, s.risk_score, s.keywords_json, u.username, u.email
+                SELECT s.id, s.risk_score, s.keywords_json, u.username,
+                       u.email AS account_email, s.recipient_email,
+                       u.can_send_external_email
                 FROM email_schedules s
                 JOIN dashboard_users u ON u.id = s.user_id
                 WHERE s.status = 'PENDING' AND s.scheduled_at <= :now
@@ -81,10 +83,15 @@ def scheduled_email_job():
                 db.commit()
                 if claimed.rowcount != 1:
                     continue
+                account_email = str(schedule["account_email"] or "").strip().lower()
+                recipient_email = str(schedule["recipient_email"] or "").strip().lower()
+                destination = recipient_email or account_email
+                if recipient_email and recipient_email != account_email and not schedule["can_send_external_email"]:
+                    raise RuntimeError("Permissão para destino externo não está ativa")
                 keywords = json.loads(schedule["keywords_json"] or "[]")
                 result = send_report(
                     db,
-                    recipients=[schedule["email"]],
+                    recipients=[destination],
                     terms=keywords,
                     risk=schedule["risk_score"],
                     recipient_name=schedule["username"],
@@ -114,10 +121,10 @@ if __name__ == "__main__":
     scheduler.add_job(job, "cron", hour=4, minute=30, id="coleta_diaria", replace_existing=True)
     scheduler.add_job(report_job, "cron", hour=7, minute=0, id="relatorio_diario", replace_existing=True)
     scheduler.add_job(
-        mcs_alert_job,
+        institutional_alert_job,
         "interval",
         minutes=15,
-        id="alertas_mcs",
+        id="alertas_institucionais",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

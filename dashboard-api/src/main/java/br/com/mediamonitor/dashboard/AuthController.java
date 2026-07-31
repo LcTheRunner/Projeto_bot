@@ -23,6 +23,7 @@ public class AuthController {
     public record EmailRequest(String email) {}
     public record ResetRequest(String token, String password) {}
     public record VerificationRequest(String username, String code) {}
+    public record PermissionRequest(boolean enabled) {}
 
     @PostMapping("/login")
     public Map<String, Object> login(@RequestBody LoginRequest body, HttpServletRequest request, HttpServletResponse response) {
@@ -89,6 +90,15 @@ public class AuthController {
         return Map.of("updated", true);
     }
 
+    @PutMapping("/users/{id}/external-email")
+    public Map<String, Boolean> updateExternalEmailPermission(
+            @PathVariable long id,
+            @RequestBody PermissionRequest body,
+            HttpServletRequest request) {
+        auth.updateExternalEmailPermission(auth.requireUser(request), id, body.enabled());
+        return Map.of("updated", true);
+    }
+
     @DeleteMapping("/users/{id}")
     public Map<String, Boolean> delete(@PathVariable long id, HttpServletRequest request) {
         auth.deleteUser(auth.requireUser(request), id);
@@ -108,6 +118,8 @@ public class AuthController {
         result.put("displayName", user.displayName());
         result.put("email", user.email());
         result.put("admin", user.admin());
+        result.put("externalEmailAllowed", user.externalEmailAllowed());
+        result.put("owner", auth.isOwner(user));
         return result;
     }
 

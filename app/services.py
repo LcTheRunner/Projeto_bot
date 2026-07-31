@@ -15,17 +15,14 @@ from app.models import Article, Classification, McsAlert
 
 NEWS_WINDOW_HOURS = 72
 ALERT_HISTORY_DAYS = 90
-GLOBAL_ALERT_TERMS = ["Movimento Cultural Social", "MCS"]
+GLOBAL_ALERT_TERMS = ["Movimento Cultural Social", "Instituto Carioca"]
 GLOBAL_ALERT_QUERIES = [
     '"Movimento Cultural Social"',
-    '"MCS" -preço -cotação -ticker -"Marcus Corp" -"Monte Carlo"',
+    '"Instituto Carioca"',
 ]
-_MCS_FULL_NAME = re.compile(r"(?<!\w)movimento\s+cultural\s+social(?!\w)", re.IGNORECASE)
-_MCS_ACRONYM = re.compile(r"(?<!\w)mcs(?!\w)", re.IGNORECASE)
-_MCS_UNRELATED_CONTEXT = re.compile(
-    r"marcus\s+corp|monte\s+carlo|tradingkey|preco\s*:|var\.\s*%|"
-    r"cotacao|ticker|nyse|nasdaq|market\s+cap|bolsa\s+de\s+valores",
-    re.IGNORECASE,
+_INSTITUTIONAL_ALERT_PATTERNS = (
+    ("Movimento Cultural Social", re.compile(r"(?<!\w)movimento\s+cultural\s+social(?!\w)", re.IGNORECASE)),
+    ("Instituto Carioca", re.compile(r"(?<!\w)instituto\s+carioca(?!\w)", re.IGNORECASE)),
 )
 RJ_TERMS = [
     "rio de janeiro",
@@ -76,17 +73,15 @@ def _alert_plain_text(title: str, body: str) -> str:
 
 def mcs_alert_terms(title: str, body: str) -> list[str]:
     text = normalize(_alert_plain_text(title, body))
-    matches = []
-    full_name = bool(_MCS_FULL_NAME.search(text))
-    if full_name:
-        matches.append("Movimento Cultural Social")
-    if _MCS_ACRONYM.search(text) and (full_name or not _MCS_UNRELATED_CONTEXT.search(text)):
-        matches.append("MCS")
-    return matches
+    return [label for label, pattern in _INSTITUTIONAL_ALERT_PATTERNS if pattern.search(text)]
 
 def _mcs_alert_excerpt(title: str, body: str) -> str:
     text = _alert_plain_text(title, body)
-    matches = [match for pattern in (_MCS_FULL_NAME, _MCS_ACRONYM) if (match := pattern.search(text))]
+    matches = [
+        match
+        for _, pattern in _INSTITUTIONAL_ALERT_PATTERNS
+        if (match := pattern.search(text))
+    ]
     if not matches:
         return text[:520]
     match = min(matches, key=lambda item: item.start())
@@ -206,9 +201,23 @@ def prune_mcs_alerts(db: Session) -> int:
     expired = db.scalars(select(McsAlert).where(McsAlert.detected_at < cutoff)).all()
     for alert in expired:
         db.delete(alert)
-    if expired:
+    removed = len(expired)
+    changed = bool(expired)
+    current = db.scalars(select(McsAlert).where(McsAlert.detected_at >= cutoff)).all()
+    for alert in current:
+        terms = mcs_alert_terms(alert.title, alert.match_excerpt or "")
+        if not terms:
+            db.delete(alert)
+            removed += 1
+            changed = True
+            continue
+        encoded = json.dumps(terms, ensure_ascii=False)
+        if alert.matched_terms_json != encoded:
+            alert.matched_terms_json = encoded
+            changed = True
+    if changed:
         db.commit()
-    return len(expired)
+    return removed
 
 def backfill_mcs_alerts(db: Session) -> dict:
     removed = prune_mcs_alerts(db)
@@ -368,7 +377,7 @@ def collect_mcs_alerts(db: Session) -> dict:
     return {
         "encontrados": len(unique),
         "ultimas_72h": len(recent),
-        "relevantes_mcs": len(relevant),
+        "relevantes_alerta": len(relevant),
         "novos": max(0, alerts_after - alerts_before),
         "novas_noticias": saved_articles,
         "alertas_expirados": removed,

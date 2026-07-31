@@ -25,13 +25,13 @@ usuário, e-mail e senha; administradores também podem criar contas pelo
 painel. Cada usuário possui uma lista independente de
 palavras-chave. O coletor pesquisa a união dos termos ativos, enquanto a API
 analítica entrega a cada conta apenas as notícias que correspondem à sua lista.
-As 19 palavras-chave oficiais são entregues por padrão a todas as contas,
-incluindo **Movimento Cultural Social** e **MCS**, mas cada usuário pode
+As 18 palavras-chave oficiais são entregues por padrão a todas as contas,
+incluindo **Movimento Cultural Social** e **Instituto Carioca**, mas cada usuário pode
 removê-las. A tela aceita inclusão e remoção em lote, elimina
 duplicatas e reconhece vírgula, ponto, ponto e vírgula, dois-pontos, aspas e
 quebras de linha como separadores.
 
-O dashboard abre em **Brasil inteiro**. O seletor de abrangência no cabeçalho
+O dashboard abre em **Brasil inteiro**. O seletor de abrangência no recorte compartilhado
 tem busca textual e permite selecionar todo o Estado do Rio de Janeiro ou
 combinar livremente vários dos 92 municípios fluminenses, incluindo
 **Rio de Janeiro (capital)**, sem alterar a coleta nacional.
@@ -39,6 +39,13 @@ combinar livremente vários dos 92 municípios fluminenses, incluindo
 O período do painel pode ser alterado entre **24 horas**, **48 horas**, **7
 dias** e **30 dias**. O mesmo período é usado nos indicadores, notícias e no
 relatório PDF.
+
+Palavras-chave, veículos, editorias, riscos, tons e localidades aceitam seleção
+múltipla. Esse recorte permanece sincronizado entre Visão geral,
+Palavras-chave, Veículos, Notícias e o relatório PDF. A página de Veículos usa
+o mesmo recorte para mostrar quais fontes mais publicaram sobre o assunto. Os
+filtros do formulário de Envios por e-mail permanecem independentes. A busca
+livre por assunto, título, jornalista ou expressão também integra esse recorte.
 
 No cadastro, um código numérico de uso único é enviado ao e-mail e expira em
 15 minutos. A conta só pode entrar depois da confirmação.
@@ -53,7 +60,10 @@ O relatório PDF aceita seções personalizadas e até três parágrafos de
 
 Cada usuário também pode abrir **Envios por e-mail** no menu, escolher data,
 horário, risco e um conjunto de palavras-chave e programar até dois boletins
-ativos. O destino é sempre o e-mail verificado da própria conta. O worker
+ativos. Por padrão, o destino é sempre o e-mail verificado da própria conta.
+Somente o proprietário configurado pode liberar individualmente uma conta para
+informar outro endereço no agendamento; a opção permanece invisível e a API
+recusa destinos externos enquanto essa permissão estiver bloqueada. O worker
 atualiza a coleta até 20 minutos antes do horário e envia um resumo editorial
 com no máximo seis notícias das últimas 24 horas que correspondam ao recorte.
 
@@ -75,6 +85,11 @@ Um administrador existente também pode acionar a transferência pela página.
 Ela só é aceita para a mesma combinação de usuário e e-mail configurada no
 servidor. O formulário da página cria somente usuários comuns.
 
+Na mesma página, somente a conta proprietária pode habilitar ou revogar a
+permissão de destino externo de cada usuário. Contas novas e existentes começam
+com essa permissão bloqueada. A revogação impede novos usos e marca como falhos
+os envios externos ainda pendentes.
+
 Depois de alterar essas variáveis, recrie o contêiner para que o novo ambiente
 seja carregado:
 
@@ -90,18 +105,15 @@ A exclusão é permanente, não permite remover a própria conta nem o último
 administrador e também remove sessões, palavras-chave e agendamentos vinculados
 por integridade referencial.
 
-## Alertas institucionais do MCS
+## Alertas institucionais
 
-As expressões **Movimento Cultural Social** e **MCS** são monitoradas
+As expressões **Movimento Cultural Social** e **Instituto Carioca** são monitoradas
 globalmente e não dependem das palavras-chave pessoais. O worker executa uma
 busca prioritária no Google Notícias e nos feeds RSS configurados a cada 15
 minutos, além da coleta normal. Na coleta diária, o conteúdo completo dos itens
 RSS também é verificado, mesmo quando a menção não aparece no título ou no
-resumo. A sigla é tratada como termo isolado: `MCS`, `(MCS)` e `MCS-RJ` são
-aceitos, enquanto fragmentos como `AMCS`, `MCS2` e `MCS_2026` são ignorados.
-Contextos explicitamente financeiros ou de outras expansões conhecidas da
-sigla, como **Marcus Corp** e **Monte Carlo**, também são descartados para não
-acionar o sino com notícias sem relação institucional.
+resumo. Os termos são tratados como expressões completas para não acionar o
+sino por fragmentos de outras palavras ou identificadores técnicos.
 
 Quando uma ocorrência é encontrada, o sistema preserva por **90 dias** um
 resumo próprio do alerta, mesmo depois que a notícia sai da janela operacional

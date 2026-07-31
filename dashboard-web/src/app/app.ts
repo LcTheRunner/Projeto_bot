@@ -18,19 +18,24 @@ interface Overview {
   byKeyword: Point[]; timeline: Point[]; articles: Article[];
 }
 interface Filters { sources: string[]; sections: string[]; risks: number[]; keywords: string[]; tones: string[]; municipalities: string[]; }
-interface CurrentUser { id: number; username: string; displayName: string; email?: string; admin: boolean; }
+interface CurrentUser {
+  id: number; username: string; displayName: string; email?: string; admin: boolean;
+  externalEmailAllowed?: boolean; owner?: boolean;
+}
 interface UserKeyword { id: number; keyword: string; }
 interface ManagedUser {
   id: number; username: string; displayName: string; email?: string;
   emailVerified: boolean; admin: boolean; active: boolean; createdAt: string;
-  ownerCandidate: boolean;
+  ownerCandidate: boolean; externalEmailAllowed: boolean;
 }
 interface EmailSchedule {
   id: number; scheduledAt: string; risk: number | null; keywords: string[];
+  recipientEmail?: string;
   status: 'PENDING' | 'PREPARING' | 'SENT' | 'FAILED';
   preparedAt?: string; sentAt?: string; lastError?: string;
 }
 type DashboardPage = 'overview' | 'keywords' | 'sources' | 'news' | 'schedules' | 'admin';
+type TextFacet = 'keyword' | 'source' | 'section' | 'tone';
 
 @Component({
   selector: 'app-root',
@@ -59,6 +64,11 @@ export class App implements OnInit, OnDestroy {
   readonly keywordError = signal('');
   readonly keywordMessage = signal('');
   readonly geographyOpen = signal(false);
+  readonly selectedKeywords = signal<ReadonlySet<string>>(new Set());
+  readonly selectedSources = signal<ReadonlySet<string>>(new Set());
+  readonly selectedSections = signal<ReadonlySet<string>>(new Set());
+  readonly selectedRisks = signal<ReadonlySet<number>>(new Set());
+  readonly selectedTones = signal<ReadonlySet<string>>(new Set());
   readonly managedUsers = signal<ManagedUser[]>([]);
   readonly accountError = signal('');
   readonly accountMessage = signal('');
@@ -66,15 +76,15 @@ export class App implements OnInit, OnDestroy {
   readonly scheduleError = signal('');
   readonly scheduleMessage = signal('');
   private readonly popStateHandler = () => this.activatePage(this.pageFromPath(), false);
+  private filterReloadTimer?: number;
+  private loadSequence = 0;
 
   days = 7;
-  keyword = '';
-  source = '';
-  risk = '';
-  tone = '';
   selectedLocations: string[] = [];
   draftLocations = new Set<string>();
   geographySearch = '';
+  keywordFilterSearch = '';
+  sourceFilterSearch = '';
   search = '';
   loginUsername = '';
   loginPassword = '';
@@ -96,6 +106,7 @@ export class App implements OnInit, OnDestroy {
   scheduleTime = '';
   scheduleRisk = '';
   scheduleKeywords = new Set<string>();
+  scheduleRecipientEmail = '';
 
   ngOnInit(): void {
     this.activatePage(this.pageFromPath(), false);
@@ -110,6 +121,7 @@ export class App implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     window.removeEventListener('popstate', this.popStateHandler);
+    if (this.filterReloadTimer !== undefined) window.clearTimeout(this.filterReloadTimer);
   }
 
   login(): void {
@@ -204,7 +216,7 @@ export class App implements OnInit, OnDestroy {
       this.loading.set(false);
       return;
     }
-    this.http.get<Filters>('/dashboard-api/filters').subscribe({ next: value => this.filters.set(value) });
+    this.loadFilterOptions();
     if (this.page() === 'keywords') this.loadKeywords();
     if (this.page() === 'schedules') { this.loadKeywords(); this.loadSchedules(); this.prepareScheduleForm(); }
     this.load();
@@ -244,8 +256,8 @@ export class App implements OnInit, OnDestroy {
     return {
       overview: 'Veja o que exige atenção agora, sem excesso de informação.',
       keywords: 'Defina os temas da sua conta e acompanhe o volume de cada termo.',
-      sources: 'Entenda quais veículos e editorias concentram a cobertura.',
-      news: 'Consulte, filtre e abra todas as notícias coletadas.',
+      sources: 'Compare quem mais publicou dentro do mesmo recorte usado nas outras páginas.',
+      news: 'Combine temas, veículos, editorias, riscos, tons e localidades em uma única busca.',
       schedules: 'Receba um recorte objetivo no seu e-mail, no dia e horário que escolher.',
       admin: 'Gerencie acessos e contas da Central de Monitoramento.'
     }[this.page()];
@@ -255,12 +267,11 @@ export class App implements OnInit, OnDestroy {
     this.navigate('keywords');
   }
 
-  private activatePage(page: DashboardPage, resetDetailFilters: boolean): void {
+  private activatePage(page: DashboardPage, _resetDetailFilters: boolean): void {
     if (page === 'admin' && this.user() && !this.user()!.admin) {
       window.history.replaceState({}, '', '/');
       page = 'overview';
     }
-    const changed = this.page() !== page;
     this.page.set(page);
     document.title = `${this.pageTitle()} — Central MCS`;
 
@@ -283,17 +294,8 @@ export class App implements OnInit, OnDestroy {
       this.loadAccounts();
     }
     if (page !== 'admin' && this.user() && !this.data()) {
-      this.http.get<Filters>('/dashboard-api/filters').subscribe({ next: value => this.filters.set(value) });
+      this.loadFilterOptions();
       this.load();
-    }
-
-    if (changed && resetDetailFilters && page !== 'news' && this.hasDetailFilters()) {
-      this.keyword = '';
-      this.source = '';
-      this.risk = '';
-      this.tone = '';
-      this.search = '';
-      if (this.user()) this.load();
     }
   }
 
@@ -305,10 +307,6 @@ export class App implements OnInit, OnDestroy {
     if (path === '/envios') return 'schedules';
     if (path === '/admin') return 'admin';
     return 'overview';
-  }
-
-  private hasDetailFilters(): boolean {
-    return Boolean(this.keyword || this.source || this.risk !== '' || this.tone || this.search);
   }
 
   closeKeywords(): void {
@@ -362,6 +360,117 @@ export class App implements OnInit, OnDestroy {
   filteredMunicipalities(): string[] {
     const term = this.geographySearch.trim().toLocaleLowerCase('pt-BR');
     return this.filters().municipalities.filter(item => !term || item.toLocaleLowerCase('pt-BR').includes(term));
+  }
+
+  usesSharedFilters(): boolean {
+    return this.page() === 'overview' || this.page() === 'keywords'
+      || this.page() === 'sources' || this.page() === 'news';
+  }
+
+  toggleTextFilter(facet: TextFacet, value: string, checked: boolean): void {
+    const next = new Set(this.textSelection(facet));
+    if (checked) next.add(value); else next.delete(value);
+    this.setTextSelection(facet, next);
+    this.scheduleFilterLoad();
+  }
+
+  toggleRiskFilter(value: number, checked: boolean): void {
+    const next = new Set(this.selectedRisks());
+    if (checked) next.add(value); else next.delete(value);
+    this.selectedRisks.set(next);
+    this.scheduleFilterLoad();
+  }
+
+  textFilterSelected(facet: TextFacet, value: string): boolean {
+    return this.textSelection(facet).has(value);
+  }
+
+  riskFilterSelected(value: number): boolean {
+    return this.selectedRisks().has(value);
+  }
+
+  facetCount(facet: TextFacet | 'risk'): number {
+    return facet === 'risk' ? this.selectedRisks().size : this.textSelection(facet).size;
+  }
+
+  facetSummary(facet: TextFacet | 'risk'): string {
+    const count = this.facetCount(facet);
+    return count ? `${count} selecionado${count === 1 ? '' : 's'}` : 'Todos';
+  }
+
+  clearFacet(facet: TextFacet | 'risk', event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (facet === 'risk') this.selectedRisks.set(new Set());
+    else this.setTextSelection(facet, new Set());
+    this.scheduleFilterLoad();
+  }
+
+  filteredFacetOptions(facet: TextFacet): string[] {
+    const options = {
+      keyword: this.filters().keywords,
+      source: this.filters().sources,
+      section: this.filters().sections,
+      tone: this.filters().tones
+    }[facet];
+    const search = (facet === 'keyword' ? this.keywordFilterSearch
+      : facet === 'source' ? this.sourceFilterSearch : '').trim().toLocaleLowerCase('pt-BR');
+    return options.filter(value => !search || value.toLocaleLowerCase('pt-BR').includes(search));
+  }
+
+  activeFilterCount(): number {
+    return this.selectedKeywords().size + this.selectedSources().size + this.selectedSections().size
+      + this.selectedRisks().size + this.selectedTones().size + this.selectedLocations.length
+      + (this.search.trim() ? 1 : 0);
+  }
+
+  filterContextSummary(): string {
+    const parts: string[] = [];
+    if (this.selectedKeywords().size) parts.push(this.compactSelection('Temas', this.selectedKeywords()));
+    if (this.selectedSources().size) parts.push(this.compactSelection('Veículos', this.selectedSources()));
+    if (this.selectedSections().size) parts.push(this.compactSelection('Editorias', this.selectedSections()));
+    if (this.selectedRisks().size) parts.push(`Riscos: ${[...this.selectedRisks()].sort().join(', ')}`);
+    if (this.selectedTones().size) parts.push(this.compactSelection('Tons', this.selectedTones()));
+    if (this.selectedLocations.length) parts.push(`Abrangência: ${this.geographyLabel()}`);
+    if (this.search.trim()) parts.push(`Busca: “${this.search.trim()}”`);
+    return parts.length ? parts.join(' · ') : 'Todo o conteúdo monitorado na sua conta';
+  }
+
+  onSharedSearchChange(): void {
+    this.scheduleFilterLoad();
+  }
+
+  viewSourceNews(source: string): void {
+    this.selectedSources.set(new Set([source]));
+    this.navigate('news');
+    this.load();
+  }
+
+  private textSelection(facet: TextFacet): ReadonlySet<string> {
+    return {
+      keyword: this.selectedKeywords(),
+      source: this.selectedSources(),
+      section: this.selectedSections(),
+      tone: this.selectedTones()
+    }[facet];
+  }
+
+  private setTextSelection(facet: TextFacet, value: ReadonlySet<string>): void {
+    if (facet === 'keyword') this.selectedKeywords.set(value);
+    if (facet === 'source') this.selectedSources.set(value);
+    if (facet === 'section') this.selectedSections.set(value);
+    if (facet === 'tone') this.selectedTones.set(value);
+  }
+
+  private compactSelection(label: string, values: ReadonlySet<string>): string {
+    const selected = [...values];
+    const visible = selected.slice(0, 2).map(value => this.toneLabel(value)).join(', ');
+    return `${label}: ${visible}${selected.length > 2 ? ` +${selected.length - 2}` : ''}`;
+  }
+
+  private scheduleFilterLoad(): void {
+    if (this.filterReloadTimer !== undefined) window.clearTimeout(this.filterReloadTimer);
+    this.filterReloadTimer = window.setTimeout(() => this.load(), 180);
   }
 
   addKeyword(): void {
@@ -421,6 +530,36 @@ export class App implements OnInit, OnDestroy {
     });
   }
 
+  private loadFilterOptions(): void {
+    this.http.get<Filters>('/dashboard-api/filters').subscribe({
+      next: value => {
+        this.filters.set(value);
+        const keywordChanged = this.keepAvailable(this.selectedKeywords, value.keywords);
+        const sourceChanged = this.keepAvailable(this.selectedSources, value.sources);
+        const sectionChanged = this.keepAvailable(this.selectedSections, value.sections);
+        const toneChanged = this.keepAvailable(this.selectedTones, value.tones);
+        const validRisks = new Set(value.risks);
+        const risks = new Set([...this.selectedRisks()].filter(item => validRisks.has(item)));
+        const riskChanged = risks.size !== this.selectedRisks().size;
+        if (riskChanged) this.selectedRisks.set(risks);
+        if (keywordChanged || sourceChanged || sectionChanged || toneChanged || riskChanged) {
+          this.scheduleFilterLoad();
+        }
+      }
+    });
+  }
+
+  private keepAvailable(
+    target: { (): ReadonlySet<string>; set(value: ReadonlySet<string>): void },
+    available: string[]
+  ): boolean {
+    const allowed = new Set(available.map(value => value.toLocaleLowerCase('pt-BR')));
+    const next = new Set([...target()].filter(value => allowed.has(value.toLocaleLowerCase('pt-BR'))));
+    if (next.size === target().size) return false;
+    target.set(next);
+    return true;
+  }
+
   private loadSchedules(): void {
     this.http.get<EmailSchedule[]>('/dashboard-api/email-schedules').subscribe({
       next: schedules => this.emailSchedules.set(schedules),
@@ -460,12 +599,14 @@ export class App implements OnInit, OnDestroy {
     this.http.post<{ id: number }>('/dashboard-api/email-schedules', {
       scheduledAt: `${this.scheduleDate}T${this.scheduleTime}:00`,
       risk: this.scheduleRisk === '' ? null : Number(this.scheduleRisk),
-      keywords: [...this.scheduleKeywords]
+      keywords: [...this.scheduleKeywords],
+      recipientEmail: this.user()?.externalEmailAllowed ? this.scheduleRecipientEmail.trim() || null : null
     }).subscribe({
       next: () => {
         this.scheduleMessage.set('Envio programado. A coleta será atualizada antes do horário.');
         this.scheduleKeywords.clear();
         this.scheduleRisk = '';
+        this.scheduleRecipientEmail = '';
         this.scheduleDate = '';
         this.scheduleTime = '';
         this.prepareScheduleForm();
@@ -563,6 +704,24 @@ export class App implements OnInit, OnDestroy {
     });
   }
 
+  updateExternalEmailPermission(account: ManagedUser): void {
+    this.accountError.set('');
+    this.accountMessage.set('');
+    const enabled = !account.externalEmailAllowed;
+    this.http.put(`/auth-api/users/${account.id}/external-email`, { enabled }).subscribe({
+      next: () => {
+        if (account.id === this.user()?.id) {
+          this.user.update(current => current ? { ...current, externalEmailAllowed: enabled } : current);
+        }
+        this.accountMessage.set(enabled
+          ? `${account.username} agora pode escolher outro e-mail nos agendamentos.`
+          : `Envio para outros e-mails bloqueado para ${account.username}.`);
+        this.loadAccounts();
+      },
+      error: error => this.accountError.set(this.authError(error, 'Não foi possível alterar a permissão de envio.'))
+    });
+  }
+
   private loadAccounts(): void {
     this.http.get<ManagedUser[]>('/auth-api/users').subscribe({
       next: users => this.managedUsers.set(users),
@@ -584,12 +743,21 @@ export class App implements OnInit, OnDestroy {
   }
 
   load(): void {
+    const sequence = ++this.loadSequence;
     this.loading.set(true);
     this.error.set('');
     const params = this.params();
     this.http.get<Overview>('/dashboard-api/overview', { params }).subscribe({
-      next: value => { this.data.set(value); this.loading.set(false); },
-      error: () => { this.error.set('Não foi possível carregar os dados. Tente novamente.'); this.loading.set(false); }
+      next: value => {
+        if (sequence !== this.loadSequence) return;
+        this.data.set(value);
+        this.loading.set(false);
+      },
+      error: () => {
+        if (sequence !== this.loadSequence) return;
+        this.error.set('Não foi possível carregar os dados. Tente novamente.');
+        this.loading.set(false);
+      }
     });
   }
 
@@ -629,7 +797,19 @@ export class App implements OnInit, OnDestroy {
     });
   }
 
-  clear(): void { this.days = 7; this.keyword = ''; this.source = ''; this.risk = ''; this.tone = ''; this.selectedLocations = []; this.search = ''; this.load(); }
+  clear(): void {
+    this.days = 7;
+    this.selectedKeywords.set(new Set());
+    this.selectedSources.set(new Set());
+    this.selectedSections.set(new Set());
+    this.selectedRisks.set(new Set());
+    this.selectedTones.set(new Set());
+    this.selectedLocations = [];
+    this.keywordFilterSearch = '';
+    this.sourceFilterSearch = '';
+    this.search = '';
+    this.load();
+  }
   periodLabel(): string {
     if (this.days === 1) return 'Últimas 24 horas';
     if (this.days === 2) return 'Últimas 48 horas';
@@ -652,27 +832,29 @@ export class App implements OnInit, OnDestroy {
   topKeyword(): Point | undefined { return this.data()?.byKeyword?.[0]; }
   topSource(): Point | undefined { return this.data()?.bySource?.[0]; }
   visibleArticles(): Article[] {
-    const term = this.search.trim().toLocaleLowerCase('pt-BR');
-    if (!term) return this.data()?.articles ?? [];
-    return (this.data()?.articles ?? []).filter(a => [a.title, a.source, a.journalist, ...a.keywords].some(value => value?.toLocaleLowerCase('pt-BR').includes(term)));
+    return this.data()?.articles ?? [];
   }
 
   private params(): HttpParams {
     let params = new HttpParams().set('days', this.days);
-    if (this.keyword) params = params.set('keyword', this.keyword);
-    if (this.source) params = params.set('source', this.source);
-    if (this.risk !== '') params = params.set('risk', this.risk);
-    if (this.tone) params = params.set('tone', this.tone);
+    this.selectedKeywords().forEach(value => params = params.append('keyword', value));
+    this.selectedSources().forEach(value => params = params.append('source', value));
+    this.selectedSections().forEach(value => params = params.append('section', value));
+    this.selectedRisks().forEach(value => params = params.append('risk', String(value)));
+    this.selectedTones().forEach(value => params = params.append('tone', value));
+    if (this.search.trim()) params = params.set('query', this.search.trim());
     this.selectedLocations.forEach(location => params = params.append('location', location));
     return params;
   }
 
   private activeFilterLabels(): string[] {
     const labels: string[] = [];
-    if (this.keyword) labels.push(`Palavra-chave: ${this.keyword}`);
-    if (this.source) labels.push(`Veículo: ${this.source}`);
-    if (this.risk !== '') labels.push(`Risco: ${this.risk}`);
-    if (this.tone) labels.push(`Tom: ${this.toneLabel(this.tone)}`);
+    this.selectedKeywords().forEach(value => labels.push(`Palavra-chave: ${value}`));
+    this.selectedSources().forEach(value => labels.push(`Veículo: ${value}`));
+    this.selectedSections().forEach(value => labels.push(`Editoria: ${this.toneLabel(value)}`));
+    this.selectedRisks().forEach(value => labels.push(`Risco: ${value}`));
+    this.selectedTones().forEach(value => labels.push(`Tom: ${this.toneLabel(value)}`));
+    if (this.search.trim()) labels.push(`Busca livre: ${this.search.trim()}`);
     if (this.selectedLocations.includes('estado_rj')) labels.push('Abrangência: Todo o Estado do Rio de Janeiro');
     else if (this.selectedLocations.length) labels.push(`Municípios: ${this.selectedLocations.join(', ')}`);
     return labels;

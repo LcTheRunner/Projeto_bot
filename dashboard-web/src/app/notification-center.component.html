@@ -6,7 +6,7 @@
     [class.has-unread]="unreadCount() > 0"
     [attr.aria-label]="ariaLabel()"
     [attr.aria-expanded]="open()"
-    aria-controls="mcs-alert-panel"
+    aria-controls="institutional-alert-panel"
     aria-haspopup="dialog"
     (click)="toggle()"
   >
@@ -23,18 +23,18 @@
 <aside
   #alertPanel
   *ngIf="open()"
-  id="mcs-alert-panel"
+  id="institutional-alert-panel"
   class="alert-panel"
   tabindex="-1"
   role="dialog"
   aria-modal="true"
-  aria-labelledby="mcs-alert-title"
+  aria-labelledby="institutional-alert-title"
 >
   <header class="alert-panel-head">
     <div>
       <p>VIGILÂNCIA INSTITUCIONAL</p>
-      <h2 id="mcs-alert-title">Menções ao MCS</h2>
-      <span>Movimento Cultural Social e sigla MCS</span>
+      <h2 id="institutional-alert-title">Menções institucionais</h2>
+      <span>Movimento Cultural Social e Instituto Carioca</span>
     </div>
     <button #closeButton type="button" class="alert-close" aria-label="Fechar alertas" (click)="close()">×</button>
   </header>
@@ -88,7 +88,7 @@
       <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
     </svg>
     <strong>Nenhuma menção encontrada</strong>
-    <p>Quando o monitoramento localizar “Movimento Cultural Social” ou “MCS”, a notícia aparecerá aqui.</p>
+    <p>Quando o monitoramento localizar “Movimento Cultural Social” ou “Instituto Carioca”, a notícia aparecerá aqui.</p>
   </div>
 
   <button

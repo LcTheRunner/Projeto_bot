@@ -11,7 +11,7 @@ import {
   signal
 } from '@angular/core';
 
-interface McsAlert {
+interface InstitutionalAlert {
   id: number;
   title: string;
   url: string;
@@ -27,7 +27,7 @@ interface McsAlert {
 }
 
 interface AlertResponse {
-  items: McsAlert[];
+  items: InstitutionalAlert[];
   unreadCount: number;
   nextCursor?: number;
 }
@@ -53,7 +53,7 @@ export class NotificationCenterComponent implements OnInit, OnDestroy {
   @ViewChild('alertPanel') private alertPanel?: ElementRef<HTMLElement>;
 
   readonly open = signal(false);
-  readonly items = signal<McsAlert[]>([]);
+  readonly items = signal<InstitutionalAlert[]>([]);
   readonly unreadCount = signal(0);
   readonly nextCursor = signal<number | null>(null);
   readonly loading = signal(false);
@@ -138,8 +138,8 @@ export class NotificationCenterComponent implements OnInit, OnDestroy {
           const added = response.unreadCount - previous;
           this.announcement.set(
             added === 1
-              ? `Uma nova menção ao MCS foi encontrada. ${response.unreadCount} não lida no total.`
-              : `${added} novas menções ao MCS foram encontradas. ${response.unreadCount} não lidas no total.`
+              ? `Uma nova menção institucional foi encontrada. ${response.unreadCount} não lida no total.`
+              : `${added} novas menções institucionais foram encontradas. ${response.unreadCount} não lidas no total.`
           );
         }
         this.countLoaded = true;
@@ -181,7 +181,7 @@ export class NotificationCenterComponent implements OnInit, OnDestroy {
     });
   }
 
-  markRead(alert: McsAlert): void {
+  markRead(alert: InstitutionalAlert): void {
     if (alert.read) return;
     this.items.update(items => items.map(item => item.id === alert.id ? { ...item, read: true } : item));
     this.unreadCount.update(value => Math.max(0, value - 1));
@@ -216,11 +216,11 @@ export class NotificationCenterComponent implements OnInit, OnDestroy {
 
   ariaLabel(): string {
     const count = this.unreadCount();
-    if (!count) return 'Alertas do MCS, nenhum alerta não lido';
-    return `Alertas do MCS, ${count} ${count === 1 ? 'alerta não lido' : 'alertas não lidos'}`;
+    if (!count) return 'Alertas institucionais, nenhum alerta não lido';
+    return `Alertas institucionais, ${count} ${count === 1 ? 'alerta não lido' : 'alertas não lidos'}`;
   }
 
-  matchedTerms(alert: McsAlert): string {
+  matchedTerms(alert: InstitutionalAlert): string {
     return alert.matchedTerms.join(' + ');
   }
 
@@ -228,7 +228,7 @@ export class NotificationCenterComponent implements OnInit, OnDestroy {
     return risk >= 10 ? 'critical' : risk >= 5 ? 'attention' : 'neutral';
   }
 
-  trackAlert(_: number, alert: McsAlert): number {
+  trackAlert(_: number, alert: InstitutionalAlert): number {
     return alert.id;
   }
 

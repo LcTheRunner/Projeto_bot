@@ -30,13 +30,13 @@ describe('NotificationCenterComponent', () => {
       nextCursor: null,
       items: [{
         id: 81,
-        title: 'MCS anuncia novo projeto cultural',
-        url: 'https://example.com/noticia-mcs',
+        title: 'Instituto Carioca anuncia novo projeto cultural',
+        url: 'https://example.com/noticia-instituto',
         source: 'Portal de teste',
         publishedAt: new Date().toISOString(),
         detectedAt: new Date().toISOString(),
-        matchedTerms: ['MCS'],
-        excerpt: 'O MCS anunciou um novo projeto.',
+        matchedTerms: ['Instituto Carioca'],
+        excerpt: 'O Instituto Carioca anunciou um novo projeto.',
         risk: 5,
         impact: 7,
         read: false
@@ -45,10 +45,10 @@ describe('NotificationCenterComponent', () => {
     fixture.detectChanges();
 
     const item = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('.alert-item')!;
-    expect(item.href).toBe('https://example.com/noticia-mcs');
+    expect(item.href).toBe('https://example.com/noticia-instituto');
     expect(item.getAttribute('role')).toBeNull();
     expect(item.closest('li')).not.toBeNull();
-    expect(item.textContent).toContain('MCS anuncia novo projeto cultural');
+    expect(item.textContent).toContain('Instituto Carioca anuncia novo projeto cultural');
     item.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     http.expectOne('/dashboard-api/alerts/81/read').flush({ unreadCount: 2 });
     fixture.detectChanges();
@@ -102,7 +102,7 @@ describe('NotificationCenterComponent', () => {
         url: 'https://example.com/primeira',
         source: 'Portal A',
         detectedAt: new Date().toISOString(),
-        matchedTerms: ['MCS'],
+        matchedTerms: ['Instituto Carioca'],
         risk: 0,
         impact: 2,
         read: true

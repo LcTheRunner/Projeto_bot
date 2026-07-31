@@ -122,6 +122,93 @@ describe('App', () => {
     http.verify();
   });
 
+  it('envia várias opções de cada filtro no mesmo recorte compartilhado', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/auth-api/me').flush({
+      id: 1, username: 'lucas', displayName: 'Lucas', email: 'lucas@example.com', admin: true, owner: true
+    });
+    http.expectOne('/dashboard-api/filters').flush({
+      sources: ['G1', 'O Globo'], sections: ['integridade_corrupcao'], risks: [0, 5, 10],
+      keywords: ['corrupção', 'emendas parlamentares'], tones: ['negativo'], municipalities: []
+    });
+    http.expectOne(request => request.url === '/dashboard-api/overview').flush({
+      periodDays: 7, generatedAt: new Date().toISOString(),
+      kpis: { articles: 0, sources: 0, risk10: 0, risk5: 0, averageImpact: 0, instagram: 0 },
+      byRisk: [], byTone: [], bySource: [], bySection: [], byKeyword: [], timeline: [], articles: []
+    });
+    fixture.detectChanges();
+    http.expectOne('/dashboard-api/alerts/unread-count').flush({ unreadCount: 0 });
+
+    fixture.componentInstance.toggleTextFilter('keyword', 'corrupção', true);
+    fixture.componentInstance.toggleTextFilter('keyword', 'emendas parlamentares', true);
+    fixture.componentInstance.toggleTextFilter('source', 'G1', true);
+    fixture.componentInstance.toggleTextFilter('source', 'O Globo', true);
+    fixture.componentInstance.toggleTextFilter('section', 'integridade_corrupcao', true);
+    fixture.componentInstance.toggleRiskFilter(5, true);
+    fixture.componentInstance.toggleRiskFilter(10, true);
+    fixture.componentInstance.toggleTextFilter('tone', 'negativo', true);
+    fixture.componentInstance.search = 'Instituto Carioca';
+    fixture.componentInstance.onSharedSearchChange();
+    await new Promise(resolve => window.setTimeout(resolve, 220));
+
+    const request = http.expectOne(item => item.url === '/dashboard-api/overview');
+    expect(request.request.params.getAll('keyword')).toEqual(['corrupção', 'emendas parlamentares']);
+    expect(request.request.params.getAll('source')).toEqual(['G1', 'O Globo']);
+    expect(request.request.params.getAll('section')).toEqual(['integridade_corrupcao']);
+    expect(request.request.params.getAll('risk')).toEqual(['5', '10']);
+    expect(request.request.params.getAll('tone')).toEqual(['negativo']);
+    expect(request.request.params.get('query')).toBe('Instituto Carioca');
+    request.flush({
+      periodDays: 7, generatedAt: new Date().toISOString(),
+      kpis: { articles: 0, sources: 0, risk10: 0, risk5: 0, averageImpact: 0, instagram: 0 },
+      byRisk: [], byTone: [], bySource: [], bySection: [], byKeyword: [], timeline: [], articles: []
+    });
+    fixture.destroy();
+    http.verify();
+  });
+
+  it('exibe o destino alternativo somente para uma conta autorizada', () => {
+    window.history.replaceState({}, '', '/envios');
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/auth-api/me').flush({
+      id: 2, username: 'autorizado', displayName: 'Autorizado', email: 'conta@example.com',
+      admin: false, externalEmailAllowed: true, owner: false
+    });
+    http.expectOne('/dashboard-api/filters').flush({
+      sources: [], sections: [], risks: [0, 5, 10], keywords: ['corrupção'], tones: [], municipalities: []
+    });
+    http.expectOne('/dashboard-api/keywords').flush([{ id: 1, keyword: 'corrupção' }]);
+    http.expectOne('/dashboard-api/email-schedules').flush([]);
+    http.expectOne(request => request.url === '/dashboard-api/overview').flush({
+      periodDays: 7, generatedAt: new Date().toISOString(),
+      kpis: { articles: 0, sources: 0, risk10: 0, risk5: 0, averageImpact: 0, instagram: 0 },
+      byRisk: [], byTone: [], bySource: [], bySection: [], byKeyword: [], timeline: [], articles: []
+    });
+    fixture.detectChanges();
+    http.expectOne('/dashboard-api/alerts/unread-count').flush({ unreadCount: 0 });
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('.schedule-email')).toBeTruthy();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.context-filters')).toBeNull();
+
+    fixture.componentInstance.scheduleDate = '2099-12-31';
+    fixture.componentInstance.scheduleTime = '12:00';
+    fixture.componentInstance.scheduleRecipientEmail = 'destino@example.com';
+    fixture.componentInstance.toggleScheduleKeyword('corrupção', true);
+    fixture.componentInstance.createSchedule();
+    const request = http.expectOne('/dashboard-api/email-schedules');
+    expect(request.request.body.recipientEmail).toBe('destino@example.com');
+    request.flush({ id: 44 });
+    http.expectOne('/dashboard-api/email-schedules').flush([]);
+
+    fixture.destroy();
+    http.verify();
+  });
+
   it('gera um resumo executivo com no máximo duas páginas', async () => {
     const service = TestBed.inject(ReportPdfService);
     const articles = Array.from({ length: 40 }, (_, index) => ({

@@ -57,7 +57,17 @@ public class DashboardService {
         return result;
     }
 
-    public Map<String, Object> overview(int days, String keyword, String source, Integer risk, String tone, List<String> locations, boolean includeAll, long userId) {
+    public Map<String, Object> overview(
+            int days,
+            List<String> keywords,
+            List<String> sources,
+            List<String> sections,
+            List<Integer> risks,
+            List<String> tones,
+            String query,
+            List<String> locations,
+            boolean includeAll,
+            long userId) {
         LocalDateTime since = LocalDateTime.now().minusDays(days);
         List<ArticleRow> rows = jdbc.query("""
                 SELECT a.id, a.title, a.url, a.body, a.source, a.section, a.journalist, a.published_at,
@@ -71,14 +81,28 @@ public class DashboardService {
         rows = rows.stream()
                 .filter(row -> userKeywords.stream().anyMatch(term -> contains(row.title + " " + row.body, term)))
                 .toList();
-        String wantedKeyword = clean(keyword);
-        String wantedSource = clean(source);
-        String wantedTone = clean(tone);
+        List<String> wantedKeywords = clean(keywords);
+        List<String> wantedSources = clean(sources);
+        List<String> wantedSections = clean(sections);
+        List<Integer> wantedRisks = risks == null
+                ? List.of()
+                : risks.stream().filter(Objects::nonNull).filter(List.of(0, 5, 10)::contains).distinct().toList();
+        List<String> wantedTones = clean(tones);
+        String wantedQuery = clean(query);
         rows = rows.stream()
-                .filter(r -> wantedKeyword == null || r.keywords.stream().anyMatch(k -> k.equalsIgnoreCase(wantedKeyword)))
-                .filter(r -> wantedSource == null || r.source.equalsIgnoreCase(wantedSource))
-                .filter(r -> risk == null || r.risk == risk)
-                .filter(r -> wantedTone == null || r.tone.equalsIgnoreCase(wantedTone))
+                .filter(r -> wantedKeywords.isEmpty()
+                        || wantedKeywords.stream().anyMatch(term -> contains(r.title + " " + r.body, term)))
+                .filter(r -> wantedSources.isEmpty()
+                        || wantedSources.stream().anyMatch(value -> equalsIgnoreCase(r.source, value)))
+                .filter(r -> wantedSections.isEmpty()
+                        || wantedSections.stream().anyMatch(value -> equalsIgnoreCase(r.section, value)))
+                .filter(r -> wantedRisks.isEmpty() || wantedRisks.contains(r.risk))
+                .filter(r -> wantedTones.isEmpty()
+                        || wantedTones.stream().anyMatch(value -> equalsIgnoreCase(r.tone, value)))
+                .filter(r -> wantedQuery == null || contains(
+                        r.title + " " + r.body + " " + r.source + " " + r.journalist,
+                        wantedQuery
+                ))
                 .filter(r -> locations == null || locations.isEmpty() || matchesLocations(r, locations))
                 .toList();
 
@@ -146,7 +170,21 @@ public class DashboardService {
                 .map(e -> Map.<String, Object>of("label", e.getKey(), "value", e.getValue())).toList();
     }
 
-    private String clean(String value) { return value == null || value.isBlank() ? null : value.trim(); }
+    private List<String> clean(List<String> values) {
+        if (values == null) return List.of();
+        return values.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList();
+    }
+    private String clean(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+    private boolean equalsIgnoreCase(String value, String expected) {
+        return value != null && expected != null && value.equalsIgnoreCase(expected);
+    }
     private boolean contains(String text, String term) {
         if (text == null || term == null) return false;
         String normalizedText = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD)

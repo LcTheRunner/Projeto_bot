@@ -29,7 +29,12 @@ import java.util.Map;
 
 @Service
 public class AuthService {
-    public record User(long id, String username, String displayName, String email, boolean admin) {}
+    public record User(long id, String username, String displayName, String email, boolean admin,
+                       boolean externalEmailAllowed) {
+        public User(long id, String username, String displayName, String email, boolean admin) {
+            this(id, username, displayName, email, admin, false);
+        }
+    }
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthService.class);
     private static final List<String> DEFAULT_KEYWORDS = List.of(
             "Instituto Carioca", "esporte e lazer", "corrupção", "emenda parlamentar",
@@ -38,10 +43,8 @@ public class AuthService {
             "empresa que investe no meio ambiente", "empresas que investem no meio ambiente",
             "empresa que investe em esporte", "empresas que investem em esporte",
             "Lei Rouanet", "Lei Rounet", "lei de incentivo ao esporte", "Prefeitura de Maricá",
-            "Movimento Cultural Social", "MCS"
+            "Movimento Cultural Social"
     );
-    private static final List<String> MCS_DEFAULT_KEYWORDS =
-            List.of("Movimento Cultural Social", "MCS");
 
     private final JdbcTemplate jdbc;
     private final JavaMailSender mailSender;
@@ -72,6 +75,7 @@ public class AuthService {
                   email VARCHAR(254) NULL UNIQUE,
                   password_hash VARCHAR(100) NOT NULL,
                   is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+                  can_send_external_email BOOLEAN NOT NULL DEFAULT FALSE,
                   active BOOLEAN NOT NULL DEFAULT TRUE,
                   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
@@ -80,6 +84,8 @@ public class AuthService {
                 "ALTER TABLE dashboard_users ADD COLUMN email VARCHAR(254) NULL UNIQUE AFTER display_name");
         addColumnIfMissing("dashboard_users", "email_verified",
                 "ALTER TABLE dashboard_users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT TRUE AFTER email");
+        addColumnIfMissing("dashboard_users", "can_send_external_email",
+                "ALTER TABLE dashboard_users ADD COLUMN can_send_external_email BOOLEAN NOT NULL DEFAULT FALSE AFTER is_admin");
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS dashboard_sessions (
                   token_hash CHAR(64) PRIMARY KEY,
@@ -142,14 +148,15 @@ public class AuthService {
             jdbc.queryForList("SELECT id FROM dashboard_users", Long.class).forEach(this::seedKeywords);
             jdbc.update("INSERT INTO system_migrations(migration_key) VALUES ('default_keywords_v2')");
         }
-        Integer mcsDefaultsApplied = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM system_migrations WHERE migration_key = 'default_keywords_mcs_v1'", Integer.class);
-        if (mcsDefaultsApplied != null && mcsDefaultsApplied == 0) {
-            MCS_DEFAULT_KEYWORDS.forEach(keyword -> jdbc.update("""
+        Integer alertKeywordsApplied = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM system_migrations WHERE migration_key = 'institutional_alert_keywords_v2'", Integer.class);
+        if (alertKeywordsApplied != null && alertKeywordsApplied == 0) {
+            jdbc.update("DELETE FROM user_keywords WHERE LOWER(TRIM(keyword)) = 'mcs'");
+            jdbc.update("""
                     INSERT IGNORE INTO user_keywords(user_id, keyword)
-                    SELECT id, ? FROM dashboard_users
-                    """, keyword));
-            jdbc.update("INSERT IGNORE INTO system_migrations(migration_key) VALUES ('default_keywords_mcs_v1')");
+                    SELECT id, 'Instituto Carioca' FROM dashboard_users
+                    """);
+            jdbc.update("INSERT IGNORE INTO system_migrations(migration_key) VALUES ('institutional_alert_keywords_v2')");
         }
         enforceConfiguredOwnerExclusivity();
     }
@@ -176,10 +183,13 @@ public class AuthService {
         String token = cookie(request, "mcs_session");
         if (token == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Autenticação necessária");
         List<User> rows = jdbc.query("""
-                SELECT u.id, u.username, u.display_name, u.email, u.is_admin
+                SELECT u.id, u.username, u.display_name, u.email, u.is_admin, u.can_send_external_email
                 FROM dashboard_sessions s JOIN dashboard_users u ON u.id = s.user_id
                 WHERE s.token_hash = ? AND s.expires_at > NOW() AND u.active = TRUE
-                """, (rs, i) -> new User(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getBoolean(5)), hash(token));
+                """, (rs, i) -> new User(
+                        rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                        rs.getBoolean(5), rs.getBoolean(6)
+                ), hash(token));
         if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sessão expirada");
         return rows.getFirst();
     }
@@ -193,7 +203,9 @@ public class AuthService {
         requireAdmin(actor);
         List<Map<String, Object>> users = jdbc.queryForList("""
                 SELECT id, username, display_name AS displayName, email,
-                       email_verified AS emailVerified, is_admin AS admin, active, created_at AS createdAt
+                       email_verified AS emailVerified, is_admin AS admin,
+                       can_send_external_email AS externalEmailAllowed,
+                       active, created_at AS createdAt
                 FROM dashboard_users ORDER BY created_at DESC
                 """);
         users.forEach(user -> user.put(
@@ -246,6 +258,42 @@ public class AuthService {
                 UPDATE dashboard_users
                 SET is_admin = CASE WHEN id = ? THEN TRUE ELSE FALSE END
                 """, targetId);
+    }
+
+    @Transactional
+    public void updateExternalEmailPermission(User actor, long targetId, boolean enabled) {
+        requireCurrentAdminForUpdate(actor);
+        if (!isConfiguredOwner(actor.username(), actor.email())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Somente a conta proprietária pode alterar destinos externos"
+            );
+        }
+        int changed = jdbc.update("""
+                UPDATE dashboard_users
+                SET can_send_external_email = ?
+                WHERE id = ? AND active = TRUE
+                """, enabled, targetId);
+        Integer existing = changed == 0
+                ? jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM dashboard_users WHERE id = ? AND active = TRUE",
+                        Integer.class,
+                        targetId
+                )
+                : 1;
+        if (existing == null || existing == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conta não encontrada ou inativa");
+        }
+        if (!enabled) {
+            jdbc.update("""
+                    UPDATE email_schedules
+                    SET status = 'FAILED',
+                        last_error = 'Permissão para destino externo revogada'
+                    WHERE user_id = ?
+                      AND recipient_email IS NOT NULL
+                      AND status IN ('PENDING', 'PREPARING')
+                    """, targetId);
+        }
     }
 
     @Transactional
@@ -482,6 +530,10 @@ public class AuthService {
         return isValidOwnerConfiguration(configuredOwner, configuredOwnerEmail)
                 && configuredOwner.equals(cleanUsername(username))
                 && configuredOwnerEmail.equals(cleanEmail(email));
+    }
+
+    public boolean isOwner(User user) {
+        return user != null && isConfiguredOwner(user.username(), user.email());
     }
 
     private boolean isValidOwnerConfiguration(String username, String email) {

@@ -72,12 +72,12 @@ def test_save_item_persiste_e_classifica_noticia_relevante(monkeypatch):
         assert db.scalar(select(func.count()).select_from(Article)) == 1
 
 
-def test_save_item_cria_alerta_global_mcs_e_nao_duplica(monkeypatch):
+def test_save_item_cria_alerta_institucional_e_nao_duplica(monkeypatch):
     monkeypatch.setattr("app.services.enrich", lambda item: item)
     engine = _database()
     item = _item(
-        "MCS anuncia novo projeto cultural",
-        "O Movimento Cultural Social apresentou a iniciativa nesta manhã.",
+        "Instituto Carioca anuncia novo projeto cultural",
+        "O Movimento Cultural Social e o Instituto Carioca apresentaram a iniciativa.",
         "https://example.com/mcs-projeto",
     )
 
@@ -86,8 +86,8 @@ def test_save_item_cria_alerta_global_mcs_e_nao_duplica(monkeypatch):
         assert save_item(db, item) is None
         alert = db.scalar(select(McsAlert))
         assert alert is not None
-        assert json.loads(alert.matched_terms_json) == ["Movimento Cultural Social", "MCS"]
-        assert "MCS" in alert.match_excerpt
+        assert json.loads(alert.matched_terms_json) == ["Movimento Cultural Social", "Instituto Carioca"]
+        assert "Instituto Carioca" in alert.match_excerpt
         assert db.scalar(select(func.count()).select_from(McsAlert)) == 1
 
 
@@ -112,12 +112,12 @@ def test_alerta_mcs_preserva_snapshot_apos_noticia_expirar(monkeypatch):
         assert db.scalar(select(func.count()).select_from(McsAlert)) == 1
 
 
-def test_backfill_de_alertas_mcs_e_idempotente():
+def test_backfill_de_alertas_institucionais_e_idempotente():
     engine = _database()
     with Session(engine) as db:
         article = Article(
-            title="Ações do MCS ganham destaque",
-            body="A agenda cultural foi apresentada.",
+            title="Ações do Instituto Carioca ganham destaque",
+            body="A agenda cultural do Instituto Carioca foi apresentada.",
             url="https://example.com/backfill-mcs",
             source="Portal A",
             section="cultura",
@@ -137,25 +137,19 @@ def test_backfill_de_alertas_mcs_e_idempotente():
         assert backfill_mcs_alerts(db)["alertas_criados"] == 0
 
 
-def test_detector_de_alertas_mcs_respeita_fronteiras_e_remove_identificadores():
+def test_detector_de_alertas_institucionais_respeita_expressoes_completas():
     positives = [
         ("Movimento Cultural Social lança edital", ""),
         ("MOVIMENTO   CULTURAL\nSOCIAL amplia ações", ""),
-        ("MCS anuncia programação", ""),
-        ("Agenda do (MCS) foi divulgada", ""),
-        ("Parceria MCS-RJ começa hoje", ""),
-        ("mcs apresenta novo projeto", ""),
+        ("Instituto Carioca anuncia programação", ""),
+        ("Agenda do INSTITUTO   CARIOCA foi divulgada", ""),
     ]
     negatives = [
-        ("AMCS apresenta balanço", ""),
-        ("MCSA anuncia resultado", ""),
-        ("MCS2 será atualizado", ""),
-        ("Código MCS_2026 foi publicado", ""),
+        ("MCS anuncia programação", ""),
+        ("InstitutoCarioca apresenta balanço", ""),
         ("Leia em https://mcs.org/noticia", ""),
         ("Contato imprensa@mcs.org", ""),
         ("Acesse portal.MCS.org para mais detalhes", ""),
-        ("MCS|Marcus Corp|Preço:24.840|Var. %:+0.360 - TradingKey", ""),
-        ("Método Monte Carlo (MCS) acelera a simulação", ""),
         ("Siga @MCS e #MCS", ""),
     ]
 
@@ -222,7 +216,7 @@ def test_candidato_global_cria_alerta_quando_artigo_ja_existe(monkeypatch):
         assert save_item(db, base, ["patrocínio"]) is not None
         assert db.scalar(select(func.count()).select_from(McsAlert)) == 0
 
-        assert save_item(db, candidate, ["MCS"]) is None
+        assert save_item(db, candidate, ["Instituto Carioca"]) is None
         alert = db.scalar(select(McsAlert))
         assert alert is not None
         assert "Movimento Cultural Social" in alert.match_excerpt
@@ -238,7 +232,7 @@ def test_coleta_rapida_recupera_alerta_de_item_rss_ja_existente(monkeypatch):
         "https://example.com/rss-ja-existente",
     )
     candidate = dict(base)
-    candidate["body"] = "O MCS confirmou participação no evento."
+    candidate["body"] = "O Instituto Carioca confirmou participação no evento."
     monkeypatch.setattr("app.services.rss_items", lambda: [candidate])
     monkeypatch.setattr("app.services.google_news_items", lambda **kwargs: [])
 
@@ -263,7 +257,7 @@ def test_modo_exclusivo_de_alerta_nao_salva_noticia_de_outro_tema(monkeypatch):
     item["_skip_enrich"] = True
 
     with Session(engine) as db:
-        assert save_item(db, item, ["MCS"], alert_only=True) is None
+        assert save_item(db, item, ["Instituto Carioca"], alert_only=True) is None
         assert db.scalar(select(func.count()).select_from(Article)) == 0
 
 
@@ -275,13 +269,34 @@ def test_alertas_com_mais_de_90_dias_sao_removidos(monkeypatch):
         save_item(
             db,
             _item(
-                "MCS apresenta balanço",
-                "Movimento Cultural Social detalha as atividades.",
+                "Instituto Carioca apresenta balanço",
+                "Movimento Cultural Social e Instituto Carioca detalham as atividades.",
                 "https://example.com/mcs-antigo",
             ),
         )
         alert = db.scalar(select(McsAlert))
         alert.detected_at = datetime.now(timezone.utc) - timedelta(days=91)
+        db.commit()
+
+        assert prune_mcs_alerts(db) == 1
+        assert db.scalar(select(func.count()).select_from(McsAlert)) == 0
+
+
+def test_alerta_antigo_disparado_apenas_pela_sigla_mcs_e_removido():
+    engine = _database()
+    with Session(engine) as db:
+        db.add(McsAlert(
+            article_id=None,
+            url_hash="a" * 64,
+            title="MCS anuncia programação",
+            url="https://example.com/alerta-antigo",
+            source="Portal A",
+            published_at=datetime.now(timezone.utc),
+            matched_terms_json='["MCS"]',
+            match_excerpt="O MCS divulgou sua agenda.",
+            risk_score=0,
+            impact_score=2,
+        ))
         db.commit()
 
         assert prune_mcs_alerts(db) == 1

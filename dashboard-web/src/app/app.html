@@ -40,14 +40,53 @@
           <p>{{ pageDescription() }}</p>
         </div>
         <div class="header-actions">
-          <label *ngIf="page() !== 'admin'" class="period-select"><span>Período</span><select [(ngModel)]="days" (change)="load()"><option [ngValue]="1">24 horas</option><option [ngValue]="2">48 horas</option><option [ngValue]="7">7 dias</option><option [ngValue]="30">30 dias</option></select></label>
-          <button *ngIf="page() !== 'admin'" class="utility-button geography-button" (click)="openGeography()">⌖ {{ geographyLabel() }}</button>
+          <label *ngIf="usesSharedFilters()" class="period-select"><span>Período</span><select [(ngModel)]="days" (change)="load()"><option [ngValue]="1">24 horas</option><option [ngValue]="2">48 horas</option><option [ngValue]="7">7 dias</option><option [ngValue]="30">30 dias</option></select></label>
           <button *ngIf="page() === 'overview' || page() === 'news'" class="utility-button" (click)="openReport()" [disabled]="loading()">PDF</button>
-          <button *ngIf="page() !== 'admin'" class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button>
+          <button *ngIf="usesSharedFilters()" class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button>
           <app-notification-center></app-notification-center>
           <button class="logout-button" (click)="logout()">Sair</button>
         </div>
       </header>
+
+      <section class="context-filters" *ngIf="usesSharedFilters()" aria-label="Filtros compartilhados do dashboard">
+        <div class="context-filter-head">
+          <div><p>RECORTE COMPARTILHADO</p><strong>Filtros conectados</strong><span>Esta seleção acompanha Visão geral, Palavras-chave, Veículos, Notícias e o PDF.</span></div>
+          <b>{{ activeFilterCount() ? activeFilterCount() + ' seleção(ões)' : 'Visão completa' }}</b>
+        </div>
+        <label class="context-search"><span>Busca livre em todo o recorte</span><div>⌕ <input [(ngModel)]="search" (ngModelChange)="onSharedSearchChange()" placeholder="Assunto, título, jornalista ou expressão"></div></label>
+        <div class="facet-grid">
+          <details class="facet-menu" name="shared-filter-facets">
+            <summary><span>Palavras-chave</span><strong>{{ facetSummary('keyword') }}</strong><i>⌄</i></summary>
+            <div class="facet-popover">
+              <label class="facet-search"><span>Buscar termo</span><input [(ngModel)]="keywordFilterSearch" placeholder="Digite para localizar"></label>
+              <div class="facet-actions"><small>{{ facetCount('keyword') }} marcada(s)</small><button type="button" (click)="clearFacet('keyword', $event)" [disabled]="!facetCount('keyword')">Limpar</button></div>
+              <div class="facet-options"><label *ngFor="let item of filteredFacetOptions('keyword')"><input type="checkbox" [checked]="textFilterSelected('keyword', item)" (change)="toggleTextFilter('keyword', item, $any($event.target).checked)"><span>{{ item }}</span></label><p *ngIf="!filteredFacetOptions('keyword').length">Nenhum termo encontrado.</p></div>
+            </div>
+          </details>
+          <details class="facet-menu" name="shared-filter-facets">
+            <summary><span>Veículos</span><strong>{{ facetSummary('source') }}</strong><i>⌄</i></summary>
+            <div class="facet-popover">
+              <label class="facet-search"><span>Buscar veículo</span><input [(ngModel)]="sourceFilterSearch" placeholder="Digite para localizar"></label>
+              <div class="facet-actions"><small>{{ facetCount('source') }} marcado(s)</small><button type="button" (click)="clearFacet('source', $event)" [disabled]="!facetCount('source')">Limpar</button></div>
+              <div class="facet-options"><label *ngFor="let item of filteredFacetOptions('source')"><input type="checkbox" [checked]="textFilterSelected('source', item)" (change)="toggleTextFilter('source', item, $any($event.target).checked)"><span>{{ item }}</span></label><p *ngIf="!filteredFacetOptions('source').length">Nenhum veículo encontrado.</p></div>
+            </div>
+          </details>
+          <details class="facet-menu" name="shared-filter-facets">
+            <summary><span>Editorias</span><strong>{{ facetSummary('section') }}</strong><i>⌄</i></summary>
+            <div class="facet-popover compact"><div class="facet-actions"><small>{{ facetCount('section') }} marcada(s)</small><button type="button" (click)="clearFacet('section', $event)" [disabled]="!facetCount('section')">Limpar</button></div><div class="facet-options"><label *ngFor="let item of filteredFacetOptions('section')"><input type="checkbox" [checked]="textFilterSelected('section', item)" (change)="toggleTextFilter('section', item, $any($event.target).checked)"><span>{{ toneLabel(item) }}</span></label></div></div>
+          </details>
+          <details class="facet-menu" name="shared-filter-facets">
+            <summary><span>Risco</span><strong>{{ facetSummary('risk') }}</strong><i>⌄</i></summary>
+            <div class="facet-popover compact"><div class="facet-actions"><small>{{ facetCount('risk') }} marcado(s)</small><button type="button" (click)="clearFacet('risk', $event)" [disabled]="!facetCount('risk')">Limpar</button></div><div class="facet-options"><label *ngFor="let item of filters().risks"><input type="checkbox" [checked]="riskFilterSelected(item)" (change)="toggleRiskFilter(item, $any($event.target).checked)"><span>Risco {{ item }}</span></label></div></div>
+          </details>
+          <details class="facet-menu" name="shared-filter-facets">
+            <summary><span>Tom</span><strong>{{ facetSummary('tone') }}</strong><i>⌄</i></summary>
+            <div class="facet-popover compact align-right"><div class="facet-actions"><small>{{ facetCount('tone') }} marcado(s)</small><button type="button" (click)="clearFacet('tone', $event)" [disabled]="!facetCount('tone')">Limpar</button></div><div class="facet-options"><label *ngFor="let item of filteredFacetOptions('tone')"><input type="checkbox" [checked]="textFilterSelected('tone', item)" (change)="toggleTextFilter('tone', item, $any($event.target).checked)"><span>{{ toneLabel(item) }}</span></label></div></div>
+          </details>
+          <button type="button" class="facet-location" (click)="openGeography()"><span>Abrangência</span><strong>{{ geographyLabel() }}</strong><i>⌖</i></button>
+        </div>
+        <div class="context-filter-foot"><span>{{ filterContextSummary() }}</span><button type="button" (click)="clear()" [disabled]="!activeFilterCount() && days === 7">Limpar todo o recorte</button></div>
+      </section>
 
       <div class="modal-backdrop" *ngIf="geographyOpen()" (click)="closeGeography()">
         <section class="report-modal geography-modal" role="dialog" aria-modal="true" aria-labelledby="geography-title" (click)="$event.stopPropagation()">
@@ -171,6 +210,10 @@
         </ng-container>
 
         <ng-container *ngIf="page() === 'sources'">
+          <section class="source-context">
+            <div><span>LEITURA DO RECORTE ATUAL</span><strong>{{ filterContextSummary() }}</strong><small>Os rankings abaixo mostram quem mais publicou dentro exatamente desta seleção.</small></div>
+            <button type="button" (click)="navigate('news')">Abrir notícias deste recorte →</button>
+          </section>
           <section class="page-summary">
             <article><span>VEÍCULOS DISTINTOS</span><strong>{{ dashboard.kpis.sources }}</strong><small>Fontes com notícias relevantes</small></article>
             <article><span>NOTÍCIAS ANALISADAS</span><strong>{{ dashboard.kpis.articles }}</strong><small>{{ periodLabel() }}</small></article>
@@ -179,7 +222,7 @@
           <section class="grid two source-page-grid">
             <article class="panel">
               <div class="panel-head"><div><p>COBERTURA</p><h2>Notícias por veículo</h2></div><span>{{ dashboard.kpis.sources }} fontes</span></div>
-              <div class="source-list extended"><div *ngFor="let point of dashboard.bySource"><div class="source-icon">{{ point.label.charAt(0) }}</div><div><strong>{{ point.label }}</strong><span>{{ sourceType(point.label) }}</span></div><div class="mini-track"><i [style.width.%]="width(point, dashboard.bySource)"></i></div><b>{{ point.value }}</b></div></div>
+              <div class="source-list extended"><div *ngFor="let point of dashboard.bySource"><div class="source-icon">{{ point.label.charAt(0) }}</div><div><strong>{{ point.label }}</strong><span>{{ sourceType(point.label) }}</span></div><div class="mini-track"><i [style.width.%]="width(point, dashboard.bySource)"></i></div><b>{{ point.value }}</b><button type="button" (click)="viewSourceNews(point.label)">Ver notícias</button></div><p *ngIf="!dashboard.bySource.length" class="empty">Nenhum veículo publicou dentro deste recorte.</p></div>
             </article>
             <article class="panel">
               <div class="panel-head"><div><p>EDITORIAS</p><h2>Distribuição por assunto</h2></div><span>{{ dashboard.bySection.length }} categorias</span></div>
@@ -189,15 +232,8 @@
         </ng-container>
 
         <ng-container *ngIf="page() === 'news'">
-          <section class="filters news-filters">
-            <label><span>Palavra-chave</span><select [(ngModel)]="keyword" (change)="load()"><option value="">Todas as palavras</option><option *ngFor="let item of filters().keywords" [value]="item">{{ item }}</option></select></label>
-            <label><span>Veículo</span><select [(ngModel)]="source" (change)="load()"><option value="">Todos os veículos</option><option *ngFor="let item of filters().sources" [value]="item">{{ item }}</option></select></label>
-            <label><span>Risco</span><select [(ngModel)]="risk" (change)="load()"><option value="">Todos os riscos</option><option value="10">Risco 10</option><option value="5">Risco 5</option><option value="0">Risco 0</option></select></label>
-            <label><span>Tom</span><select [(ngModel)]="tone" (change)="load()"><option value="">Todos os tons</option><option *ngFor="let item of filters().tones" [value]="item">{{ toneLabel(item) }}</option></select></label>
-            <button class="clear" (click)="clear()">Limpar filtros</button>
-          </section>
           <section class="panel articles">
-            <div class="panel-head"><div><p>CONTEÚDO COLETADO</p><h2>{{ visibleArticles().length }} notícias encontradas</h2></div><label class="search">⌕ <input [(ngModel)]="search" placeholder="Buscar por título, veículo ou termo"></label></div>
+            <div class="panel-head"><div><p>CONTEÚDO COLETADO</p><h2>{{ visibleArticles().length }} notícias encontradas</h2></div><span>Recorte sincronizado</span></div>
             <div class="table-wrap"><table><thead><tr><th>Notícia</th><th>Veículo</th><th>Editoria</th><th>Risco</th><th>Impacto</th><th>Publicação</th></tr></thead><tbody><tr *ngFor="let article of visibleArticles()"><td><a [href]="article.url" target="_blank" rel="noopener">{{ article.title }}</a><div class="tags"><span *ngFor="let word of article.keywords.slice(0, 3)">{{ word }}</span></div></td><td><strong>{{ article.source }}</strong><small *ngIf="article.journalist">{{ article.journalist }}</small></td><td>{{ toneLabel(article.section) }}</td><td><span class="risk-badge" [ngClass]="riskClass(article.risk)">{{ article.risk }}</span><small>{{ toneLabel(article.tone) }}</small></td><td><b>{{ article.impact | number:'1.1-1' }}</b></td><td>{{ date(article.publishedAt) }}</td></tr></tbody></table></div>
           </section>
         </ng-container>
@@ -220,6 +256,11 @@
                   <label><span>Horário</span><input name="scheduleTime" [(ngModel)]="scheduleTime" type="time" required></label>
                   <label><span>Risco</span><select name="scheduleRisk" [(ngModel)]="scheduleRisk"><option value="">Todos</option><option value="10">Risco 10</option><option value="5">Risco 5</option><option value="0">Risco 0</option></select></label>
                 </div>
+                <label *ngIf="user()?.externalEmailAllowed" class="schedule-email">
+                  <span>E-mail de destino</span>
+                  <input name="scheduleRecipientEmail" [(ngModel)]="scheduleRecipientEmail" type="email" maxlength="254" [placeholder]="user()?.email || 'destino@exemplo.com'">
+                  <small>Opcional. Deixe vazio para enviar ao e-mail da sua conta.</small>
+                </label>
                 <div class="schedule-terms-head">
                   <div><strong>Palavras-chave</strong><small>Sem seleção, o boletim considera todos os termos da sua conta.</small></div>
                   <label><input type="checkbox" [checked]="scheduleKeywords.size === filters().keywords.length && filters().keywords.length > 0" (change)="toggleAllScheduleKeywords($any($event.target).checked)"> Todas</label>
@@ -239,6 +280,7 @@
                 <article *ngFor="let schedule of emailSchedules()" [class.failed]="schedule.status === 'FAILED'">
                   <div class="schedule-date"><strong>{{ date(schedule.scheduledAt) }}</strong><span [attr.data-status]="schedule.status">{{ scheduleStatus(schedule.status) }}</span></div>
                   <p>{{ scheduleRiskLabel(schedule.risk) }} · {{ schedule.keywords.length }} palavra(s)-chave</p>
+                  <small *ngIf="user()?.externalEmailAllowed && schedule.recipientEmail">Destino: {{ schedule.recipientEmail }}</small>
                   <small *ngIf="schedule.status === 'PENDING'">A coleta começa até 20 minutos antes.</small>
                   <small *ngIf="schedule.status === 'PREPARING'">Atualizando notícias para este envio.</small>
                   <small *ngIf="schedule.status === 'SENT'">Entregue em {{ date(schedule.sentAt!) }}.</small>
@@ -300,6 +342,7 @@
                     <small>{{ account.active ? 'Ativa' : 'Inativa' }}</small>
                   </div>
                   <div class="admin-account-actions">
+                    <button *ngIf="user()?.owner" type="button" class="email-permission" [class.enabled]="account.externalEmailAllowed" (click)="updateExternalEmailPermission(account)">{{ account.externalEmailAllowed ? 'Bloquear e-mail externo' : 'Permitir e-mail externo' }}</button>
                     <button *ngIf="account.ownerCandidate && (!account.admin || activeAdminCount() > 1)" type="button" class="owner-action" (click)="transferOwnership(account)">Tornar admin único</button>
                     <span *ngIf="account.id === user()?.id">Sua conta</span>
                     <button *ngIf="account.id !== user()?.id" type="button" class="delete-account" (click)="deleteAccount(account)">Excluir</button>

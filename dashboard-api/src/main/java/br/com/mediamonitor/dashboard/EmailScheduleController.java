@@ -18,7 +18,8 @@ public class EmailScheduleController {
         this.auth = auth;
     }
 
-    public record ScheduleRequest(LocalDateTime scheduledAt, Integer risk, List<String> keywords) {}
+    public record ScheduleRequest(LocalDateTime scheduledAt, Integer risk, List<String> keywords,
+                                  String recipientEmail) {}
 
     @GetMapping
     public List<Map<String, Object>> list(HttpServletRequest request) {
@@ -27,7 +28,9 @@ public class EmailScheduleController {
 
     @PostMapping
     public Map<String, Long> create(@RequestBody ScheduleRequest body, HttpServletRequest request) {
-        long id = schedules.create(auth.requireUser(request), body.scheduledAt(), body.risk(), body.keywords());
+        long id = schedules.create(
+                auth.requireUser(request), body.scheduledAt(), body.risk(), body.keywords(), body.recipientEmail()
+        );
         return Map.of("id", id);
     }
 

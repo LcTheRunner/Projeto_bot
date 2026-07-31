@@ -56,16 +56,15 @@ def test_google_news_prioriza_consultas_globais_antes_do_limite(monkeypatch):
         extra_queries=["palavra de usuário"],
         priority_queries=[
             '"Movimento Cultural Social"',
-            '"MCS" -preço -cotação -ticker -"Marcus Corp" -"Monte Carlo"',
+            '"Instituto Carioca"',
         ],
     )
 
     first_query = parse_qs(urlparse(calls[0]).query)["q"][0]
     second_query = parse_qs(urlparse(calls[1]).query)["q"][0]
     assert first_query.startswith('"Movimento Cultural Social"')
-    assert second_query.startswith('"MCS"')
-    assert '"MCS"' in second_query
-    assert "-preço" in second_query
+    assert second_query.startswith('"Instituto Carioca"')
+    assert '"Instituto Carioca"' in second_query
     assert len(calls) == 80
 
 
@@ -92,7 +91,7 @@ def test_google_news_enriquece_apenas_candidatos_de_alerta_global(monkeypatch):
         }],
     )
 
-    items = google_news_items(priority_queries=['"MCS"'])
+    items = google_news_items(priority_queries=['"Instituto Carioca"'])
 
     assert items[0]["_global_alert_candidate"] is True
     assert items[0]["_skip_enrich"] is False

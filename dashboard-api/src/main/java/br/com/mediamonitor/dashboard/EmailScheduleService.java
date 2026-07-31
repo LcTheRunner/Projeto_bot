@@ -38,6 +38,7 @@ public class EmailScheduleService {
                   scheduled_at DATETIME NOT NULL,
                   risk_score INT NULL,
                   keywords_json TEXT NOT NULL,
+                  recipient_email VARCHAR(254) NULL,
                   status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
                   prepared_at DATETIME NULL,
                   sent_at DATETIME NULL,
@@ -47,11 +48,14 @@ public class EmailScheduleService {
                   INDEX idx_email_schedule_due (status, scheduled_at)
                 )
                 """);
+        addColumnIfMissing("email_schedules", "recipient_email",
+                "ALTER TABLE email_schedules ADD COLUMN recipient_email VARCHAR(254) NULL AFTER keywords_json");
     }
 
     public List<Map<String, Object>> list(AuthService.User user) {
         return jdbc.query("""
-                SELECT id, scheduled_at, risk_score, keywords_json, status, prepared_at, sent_at, last_error, created_at
+                SELECT id, scheduled_at, risk_score, keywords_json, recipient_email,
+                       status, prepared_at, sent_at, last_error, created_at
                 FROM email_schedules WHERE user_id = ? ORDER BY scheduled_at
                 """, (rs, row) -> {
             Map<String, Object> item = new LinkedHashMap<>();
@@ -59,6 +63,8 @@ public class EmailScheduleService {
             item.put("scheduledAt", rs.getTimestamp("scheduled_at").toLocalDateTime());
             item.put("risk", rs.getObject("risk_score"));
             item.put("keywords", parseKeywords(rs.getString("keywords_json")));
+            String recipientEmail = rs.getString("recipient_email");
+            item.put("recipientEmail", recipientEmail == null || recipientEmail.isBlank() ? user.email() : recipientEmail);
             item.put("status", rs.getString("status"));
             Timestamp prepared = rs.getTimestamp("prepared_at");
             Timestamp sent = rs.getTimestamp("sent_at");
@@ -71,7 +77,8 @@ public class EmailScheduleService {
     }
 
     @Transactional
-    public long create(AuthService.User user, LocalDateTime scheduledAt, Integer risk, List<String> keywords) {
+    public long create(AuthService.User user, LocalDateTime scheduledAt, Integer risk, List<String> keywords,
+                       String recipientEmail) {
         if (user.email() == null || user.email().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cadastre um e-mail na conta antes de programar o envio");
         }
@@ -80,6 +87,25 @@ public class EmailScheduleService {
         }
         if (risk != null && !List.of(0, 5, 10).contains(risk)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selecione um risco válido");
+        }
+        String requestedRecipient = recipientEmail == null ? "" : recipientEmail.trim().toLowerCase();
+        String accountEmail = user.email().trim().toLowerCase();
+        if (!requestedRecipient.isBlank()
+                && !requestedRecipient.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe um e-mail de destino válido");
+        }
+        boolean externalRecipient = !requestedRecipient.isBlank() && !requestedRecipient.equals(accountEmail);
+        if (externalRecipient) {
+            Boolean allowed = jdbc.queryForObject("""
+                    SELECT can_send_external_email
+                    FROM dashboard_users WHERE id = ? AND active = TRUE
+                    """, Boolean.class, user.id());
+            if (!Boolean.TRUE.equals(allowed)) {
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        "Sua conta não possui permissão para enviar a outro e-mail"
+                );
+            }
         }
         Integer pending = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM email_schedules
@@ -98,9 +124,10 @@ public class EmailScheduleService {
         }
         try {
             jdbc.update("""
-                    INSERT INTO email_schedules(user_id, scheduled_at, risk_score, keywords_json)
-                    VALUES (?, ?, ?, ?)
-                    """, user.id(), Timestamp.valueOf(scheduledAt), risk, mapper.writeValueAsString(selected));
+                    INSERT INTO email_schedules(user_id, scheduled_at, risk_score, keywords_json, recipient_email)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, user.id(), Timestamp.valueOf(scheduledAt), risk, mapper.writeValueAsString(selected),
+                    externalRecipient ? requestedRecipient : null);
         } catch (Exception exception) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Não foi possível salvar o agendamento");
         }
@@ -121,5 +148,13 @@ public class EmailScheduleService {
         } catch (Exception ignored) {
             return List.of();
         }
+    }
+
+    private void addColumnIfMissing(String table, String column, String ddl) {
+        Integer count = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+                """, Integer.class, table, column);
+        if (count != null && count == 0) jdbc.execute(ddl);
     }
 }

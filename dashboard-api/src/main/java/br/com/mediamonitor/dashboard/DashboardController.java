@@ -21,15 +21,20 @@ public class DashboardController {
     @GetMapping("/overview")
     public Map<String, Object> overview(
             @RequestParam(defaultValue = "7") int days,
-            @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String source,
-            @RequestParam(required = false) Integer risk,
-            @RequestParam(required = false) String tone,
+            @RequestParam(required = false) java.util.List<String> keyword,
+            @RequestParam(required = false) java.util.List<String> source,
+            @RequestParam(required = false) java.util.List<String> section,
+            @RequestParam(required = false) java.util.List<Integer> risk,
+            @RequestParam(required = false) java.util.List<String> tone,
+            @RequestParam(required = false) String query,
             @RequestParam(required = false) java.util.List<String> location,
             @RequestParam(defaultValue = "false") boolean includeAll,
             HttpServletRequest request) {
         long userId = auth.requireUser(request).id();
-        return service.overview(Math.max(1, Math.min(days, 365)), keyword, source, risk, tone, location, includeAll, userId);
+        return service.overview(
+                Math.max(1, Math.min(days, 365)), keyword, source, section, risk, tone,
+                query, location, includeAll, userId
+        );
     }
 
     @GetMapping("/filters")
