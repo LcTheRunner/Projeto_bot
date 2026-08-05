@@ -3,25 +3,34 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
-from app.database import Base, engine, get_db
+from app.database import engine, get_db
 from app.models import Article
+from app.auth import router as auth_router
+from app.dashboard_routes import router as dashboard_router
+from app.dashboard_service import clear_dashboard_cache
+from app.migrations import initialize_schema
 from app.services import backfill_journalists, backfill_mcs_alerts, collect, recent_cutoff, recent_stats
 from app.reports import send_report
 
 @asynccontextmanager
 async def lifespan(app):
-    Base.metadata.create_all(engine)
+    initialize_schema(engine)
     with Session(engine) as db:
         backfill_mcs_alerts(db)
     yield
 
-app = FastAPI(title="Monitor de Impacto Midiático", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Monitor de Impacto Midiático", version="2.0.0", lifespan=lifespan)
+app.include_router(auth_router)
+app.include_router(dashboard_router)
 
 @app.get("/health")
 def health(): return {"status": "ok"}
 
 @app.post("/coletas")
-def run_collection(db: Session = Depends(get_db)): return collect(db)
+def run_collection(db: Session = Depends(get_db)):
+    result = collect(db)
+    clear_dashboard_cache()
+    return result
 
 @app.get("/noticias")
 def articles(risco: int | None = None, limite: int = Query(50, le=200), db: Session = Depends(get_db)):

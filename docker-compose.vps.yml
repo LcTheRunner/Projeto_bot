@@ -1,3 +1,9 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "5m"
+    max-file: "3"
+
 services:
   db:
     image: mariadb:11.4
@@ -14,9 +20,12 @@ services:
       timeout: 5s
       retries: 20
     restart: unless-stopped
+    logging: *default-logging
 
   api:
-    build: .
+    image: cadu-python:latest
+    build:
+      context: .
     env_file: .env
     ports:
       - "127.0.0.1:8020:8000"
@@ -26,9 +35,11 @@ services:
     volumes:
       - "./config:/app/config:ro"
     restart: unless-stopped
+    logging: *default-logging
 
   worker:
-    build: .
+    image: cadu-python:latest
+    pull_policy: never
     command: ["python", "-m", "app.worker"]
     env_file: .env
     depends_on:
@@ -37,31 +48,19 @@ services:
     volumes:
       - "./config:/app/config:ro"
     restart: unless-stopped
-
-  dashboard-api:
-    build: ./dashboard-api
-    env_file: .env
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:mariadb://db:3306/media_monitor
-      SPRING_DATASOURCE_USERNAME: media
-      SPRING_DATASOURCE_PASSWORD: media
-      DASHBOARD_PUBLIC_URL: https://news.venturi.vps-kinghost.net
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
+    logging: *default-logging
 
   dashboard-web:
     build: ./dashboard-web
     expose:
       - "80"
     depends_on:
-      - dashboard-api
       - api
     networks:
       - default
       - npm_proxy
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   mariadb_data:

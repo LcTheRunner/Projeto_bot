@@ -101,6 +101,45 @@ describe('App', () => {
     http.verify();
   });
 
+  it('pagina notícias sem alterar os totais do recorte', () => {
+    window.history.replaceState({}, '', '/noticias');
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/auth-api/me').flush({
+      id: 1, username: 'equipe', displayName: 'Administrador MCS', email: 'equipe@example.com', admin: true
+    });
+    http.expectOne('/dashboard-api/filters').flush({
+      sources: [], sections: [], risks: [0, 5, 10], keywords: [], tones: [], municipalities: []
+    });
+    const first = http.expectOne(request => request.url === '/dashboard-api/overview');
+    expect(first.request.params.get('page')).toBe('1');
+    expect(first.request.params.get('pageSize')).toBe('50');
+    first.flush({
+      periodDays: 7, generatedAt: new Date().toISOString(),
+      kpis: { articles: 120, sources: 2, risk10: 10, risk5: 20, averageImpact: 3, instagram: 0 },
+      byRisk: [], byTone: [], bySource: [], bySection: [], byKeyword: [], timeline: [], articles: [],
+      pagination: { page: 1, pageSize: 50, totalItems: 120, totalPages: 3 }
+    });
+    fixture.detectChanges();
+    http.expectOne('/dashboard-api/alerts/unread-count').flush({ unreadCount: 0 });
+    fixture.detectChanges();
+    expect(fixture.componentInstance.articleTotal()).toBe(120);
+
+    fixture.componentInstance.goToArticlePage(2);
+    const second = http.expectOne(request => request.url === '/dashboard-api/overview');
+    expect(second.request.params.get('page')).toBe('2');
+    second.flush({
+      periodDays: 7, generatedAt: new Date().toISOString(),
+      kpis: { articles: 120, sources: 2, risk10: 10, risk5: 20, averageImpact: 3, instagram: 0 },
+      byRisk: [], byTone: [], bySource: [], bySection: [], byKeyword: [], timeline: [], articles: [],
+      pagination: { page: 2, pageSize: 50, totalItems: 120, totalPages: 3 }
+    });
+    expect(fixture.componentInstance.articlePage()).toBe(2);
+    fixture.destroy();
+    http.verify();
+  });
+
   it('abre /admin sem depender do carregamento dos indicadores', () => {
     window.history.replaceState({}, '', '/admin');
     const fixture = TestBed.createComponent(App);

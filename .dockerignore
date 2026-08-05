@@ -10,7 +10,13 @@ htmlcov
 dashboard-web/node_modules
 dashboard-web/dist
 dashboard-web/.angular
-dashboard-api/target
+dashboard-web
+dashboard-tunnel
+dashboard-localtunnel
+tests
+.agents
+*.md
+docker-compose*.yml
 dashboard-preview.png
 dashboard-preview-dark.png
 cloudflared.exe

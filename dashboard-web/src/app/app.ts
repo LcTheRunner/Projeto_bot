@@ -16,6 +16,7 @@ interface Overview {
   kpis: { articles: number; sources: number; risk10: number; risk5: number; averageImpact: number; instagram: number; };
   byRisk: Point[]; byTone: Point[]; bySource: Point[]; bySection: Point[];
   byKeyword: Point[]; timeline: Point[]; articles: Article[];
+  pagination?: { page: number; pageSize: number; totalItems: number; totalPages: number; };
 }
 interface Filters { sources: string[]; sections: string[]; risks: number[]; keywords: string[]; tones: string[]; municipalities: string[]; }
 interface CurrentUser {
@@ -60,6 +61,7 @@ export class App implements OnInit, OnDestroy {
   readonly authMode = signal<'login' | 'register' | 'verify' | 'forgot' | 'reset'>('login');
   readonly authMessage = signal('');
   readonly page = signal<DashboardPage>('overview');
+  readonly articlePage = signal(1);
   readonly userKeywords = signal<UserKeyword[]>([]);
   readonly keywordError = signal('');
   readonly keywordMessage = signal('');
@@ -347,7 +349,7 @@ export class App implements OnInit, OnDestroy {
   applyLocations(): void {
     this.selectedLocations = [...this.draftLocations];
     this.geographyOpen.set(false);
-    this.load();
+    this.load(true);
   }
 
   geographyLabel(): string {
@@ -443,7 +445,7 @@ export class App implements OnInit, OnDestroy {
   viewSourceNews(source: string): void {
     this.selectedSources.set(new Set([source]));
     this.navigate('news');
-    this.load();
+    this.load(true);
   }
 
   private textSelection(facet: TextFacet): ReadonlySet<string> {
@@ -470,7 +472,7 @@ export class App implements OnInit, OnDestroy {
 
   private scheduleFilterLoad(): void {
     if (this.filterReloadTimer !== undefined) window.clearTimeout(this.filterReloadTimer);
-    this.filterReloadTimer = window.setTimeout(() => this.load(), 180);
+    this.filterReloadTimer = window.setTimeout(() => this.load(true), 180);
   }
 
   addKeyword(): void {
@@ -742,7 +744,8 @@ export class App implements OnInit, OnDestroy {
     return this.managedUsers().filter(account => account.active && account.admin).length;
   }
 
-  load(): void {
+  load(resetArticlePage = false): void {
+    if (resetArticlePage) this.articlePage.set(1);
     const sequence = ++this.loadSequence;
     this.loading.set(true);
     this.error.set('');
@@ -808,7 +811,7 @@ export class App implements OnInit, OnDestroy {
     this.keywordFilterSearch = '';
     this.sourceFilterSearch = '';
     this.search = '';
-    this.load();
+    this.load(true);
   }
   periodLabel(): string {
     if (this.days === 1) return 'Últimas 24 horas';
@@ -835,8 +838,26 @@ export class App implements OnInit, OnDestroy {
     return this.data()?.articles ?? [];
   }
 
+  articleTotal(): number {
+    return this.data()?.pagination?.totalItems ?? this.data()?.kpis.articles ?? 0;
+  }
+
+  articleTotalPages(): number {
+    return Math.max(1, this.data()?.pagination?.totalPages ?? 1);
+  }
+
+  goToArticlePage(page: number): void {
+    const bounded = Math.max(1, Math.min(page, this.articleTotalPages()));
+    if (bounded === this.articlePage()) return;
+    this.articlePage.set(bounded);
+    this.load();
+  }
+
   private params(): HttpParams {
     let params = new HttpParams().set('days', this.days);
+    if (this.page() === 'news') {
+      params = params.set('page', this.articlePage()).set('pageSize', 50);
+    }
     this.selectedKeywords().forEach(value => params = params.append('keyword', value));
     this.selectedSources().forEach(value => params = params.append('source', value));
     this.selectedSections().forEach(value => params = params.append('section', value));

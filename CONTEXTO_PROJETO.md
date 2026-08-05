@@ -17,7 +17,7 @@ O sistema:
 - classifica notícias por risco, tom e impacto;
 - grava os resultados no MariaDB;
 - gera relatório por e-mail;
-- apresenta os dados em um dashboard Angular com API Java/Spring Boot.
+- apresenta os dados em um dashboard Angular com API FastAPI/Python.
 
 ## Arquitetura
 
@@ -25,7 +25,6 @@ O sistema:
 - `config/keywords.yaml`: palavras-chave e regras de classificação.
 - `config/sources.yaml`: fontes e integrações habilitadas.
 - `tests/`: testes automatizados do bot.
-- `dashboard-api/`: API analítica Java/Spring Boot.
 - `dashboard-web/`: frontend Angular servido por nginx.
 - `docker-compose.yml`: ambiente local completo.
 - MariaDB: banco de dados do sistema.
@@ -35,7 +34,6 @@ Serviços do Compose:
 - `db`: MariaDB;
 - `api`: FastAPI na porta `8000`;
 - `worker`: agendamento das coletas e relatórios;
-- `dashboard-api`: API do painel;
 - `dashboard-web`: painel na porta `4200`.
 
 ## Estado do Git
@@ -66,10 +64,10 @@ Não apagar alterações locais sem revisá-las.
 
 ## Resultado dos testes já realizados
 
-A suíte Python passou:
+A suíte Python passou após a migração completa do dashboard para FastAPI:
 
 ```text
-14 passed
+38 passed
 ```
 
 A coleta real realizada em 24/07/2026 retornou:

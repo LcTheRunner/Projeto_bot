@@ -17,7 +17,11 @@ Consultas principais: `GET /noticias?risco=10` e `GET /estatisticas/semana?termo
 
 ## Painel gerencial
 
-O frontend Angular fica em `dashboard-web` e consulta a API analítica Java/Spring Boot em `dashboard-api`. O painel mostra KPIs, evolução temporal, distribuição de risco e tom, menções por palavra-chave, veículos e detalhes das notícias. Os filtros consultam o MariaDB em tempo real.
+O frontend Angular fica em `dashboard-web` e consulta a mesma API FastAPI em
+`app/`. O painel mostra KPIs, evolução temporal, distribuição de risco e tom,
+menções por palavra-chave, veículos e detalhes das notícias. Os filtros e as
+agregações são executados no MariaDB; as consultas repetidas usam um cache curto
+e limitado em memória.
 
 O primeiro administrador é criado a partir de `DASHBOARD_USER` e
 `DASHBOARD_PASSWORD`. Novos usuários podem se cadastrar na tela de login com
@@ -39,6 +43,10 @@ combinar livremente vários dos 92 municípios fluminenses, incluindo
 O período do painel pode ser alterado entre **24 horas**, **48 horas**, **7
 dias** e **30 dias**. O mesmo período é usado nos indicadores, notícias e no
 relatório PDF.
+
+A página de Notícias é paginada em blocos de 50 registros. A API aceita os
+parâmetros opcionais `page` e `pageSize` (máximo 200), sem alterar os totais e
+gráficos do recorte completo.
 
 Palavras-chave, veículos, editorias, riscos, tons e localidades aceitam seleção
 múltipla. Esse recorte permanece sincronizado entre Visão geral,
@@ -97,12 +105,48 @@ Depois de alterar essas variáveis, recrie o contêiner para que o novo ambiente
 seja carregado:
 
 ```bash
-docker compose -f docker-compose.vps.yml up -d --build --force-recreate dashboard-api
+docker compose -f docker-compose.vps.yml up -d --build --force-recreate api dashboard-web
 ```
 
-O log do `dashboard-api` informa, sem exibir o e-mail, se o proprietário foi
+O log do `api` informa, sem exibir o e-mail, se o proprietário foi
 confirmado como administrador único ou se a conta correspondente não foi
 encontrada.
+
+## Implantação econômica na VPS
+
+As imagens de produção foram organizadas para reduzir o uso de disco:
+
+- `api` e `worker` compartilham a imagem `cadu-python:latest`;
+- a imagem Python contém somente `app/` e `config/`;
+- o frontend usa o nginx Alpine slim;
+- npm e pip usam caches temporários do BuildKit;
+- cada contêiner mantém no máximo três arquivos de log de 5 MB.
+
+O dashboard não possui mais JVM, Maven ou serviço Spring Boot. Autenticação,
+administração, indicadores, alertas e agendamentos usam Python, preservando as
+tabelas e os hashes BCrypt criados pela versão anterior.
+
+Para implantar e limpar somente imagens antigas e cache de build, execute na
+raiz do projeto:
+
+```bash
+sh scripts/vps-deploy.sh
+```
+
+Por padrão, o script remove todo o cache de build não utilizado para reduzir o
+uso de disco da VPS. Se for mais importante acelerar o próximo build, defina um
+limite a ser preservado sem editar o arquivo:
+
+```bash
+BUILDER_CACHE_MAX=1gb sh scripts/vps-deploy.sh
+```
+
+O script **não executa prune de volumes** e, portanto, não remove o volume do
+MariaDB. Para conferir o consumo a qualquer momento:
+
+```bash
+docker system df
+```
 
 A exclusão é permanente, não permite remover a própria conta nem o último
 administrador e também remove sessões, palavras-chave e agendamentos vinculados

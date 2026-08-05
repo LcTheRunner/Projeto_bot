@@ -3,7 +3,7 @@ import re
 import hashlib
 import html
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import func, insert, select, text
+from sqlalchemy import func, insert, or_, select, text
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +12,7 @@ from app.classifier import classify, is_relevant, normalize, result_json
 from app.collectors import rss_items, google_news_items, google_items, instagram_items, enrich
 from app.config import yaml_config
 from app.models import Article, Classification, McsAlert
+from app.migrations import searchable_text
 
 NEWS_WINDOW_HOURS = 72
 ALERT_HISTORY_DAYS = 90
@@ -288,7 +289,13 @@ def save_item(
     elif not is_relevant(item["title"], item["body"], relevance_terms):
         return None
     keywords, evidence = result_json(result)
-    article = Article(**item, section=result.section)
+    article = Article(
+        **item,
+        section=result.section,
+        searchable_text=searchable_text(
+            item.get("title"), item.get("body"), item.get("source"), item.get("journalist")
+        ),
+    )
     classification = Classification(
         risk_score=result.risk_score,
         tone=result.tone,
@@ -399,38 +406,56 @@ def recent_stats(
     risk: int | None = None,
     hours: int = NEWS_WINDOW_HOURS,
 ) -> dict:
+    """Build report statistics in SQL and only materialize the highlighted rows."""
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
-    rows = db.execute(select(Article, Classification).join(Classification).where(Article.published_at >= since)).all()
     if term:
         terms = [term]
-    if terms:
-        needles = [normalize(value) for value in terms if value and value.strip()]
-        rows = [
-            row for row in rows
-            if any(needle in normalize(f"{row.Article.title} {row.Article.body}") for needle in needles)
-        ]
+    conditions = [Article.published_at >= since]
+    needles = [normalize(value) for value in terms or [] if value and value.strip()]
+    if needles:
+        conditions.append(or_(*[Article.searchable_text.contains(value) for value in needles]))
     if risk is not None:
-        rows = [row for row in rows if row.Classification.risk_score == risk]
-    def count(field):
-        out = {}
-        for a, _ in rows:
-            key = getattr(a, field) or "nao_identificado"; out[key] = out.get(key, 0) + 1
-        return dict(sorted(out.items(), key=lambda x: -x[1]))
-    risks = {}
-    for _, c in rows: risks[str(c.risk_score)] = risks.get(str(c.risk_score), 0) + 1
-    ordered = sorted(
-        rows,
-        key=lambda row: (
-            row.Classification.risk_score,
-            row.Classification.impact_score,
-            _aware(row.Article.published_at),
-        ),
-        reverse=True,
-    )
-    # Brasil inteiro é o padrão; recortes regionais pertencem aos filtros da interface.
-    selected = ordered[:top_limit]
+        conditions.append(Classification.risk_score == risk)
+
+    def grouped(column) -> dict[str, int]:
+        label = func.coalesce(column, "nao_identificado")
+        rows = db.execute(
+            select(label, func.count())
+            .select_from(Article)
+            .join(Classification)
+            .where(*conditions)
+            .group_by(label)
+            .order_by(func.count().desc())
+        ).all()
+        return {str(value): int(count) for value, count in rows}
+
+    total = db.scalar(
+        select(func.count()).select_from(Article).join(Classification).where(*conditions)
+    ) or 0
+    risks = {
+        str(value): int(count)
+        for value, count in db.execute(
+            select(Classification.risk_score, func.count())
+            .select_from(Article)
+            .join(Classification)
+            .where(*conditions)
+            .group_by(Classification.risk_score)
+            .order_by(func.count().desc())
+        ).all()
+    }
+    selected = db.execute(
+        select(Article, Classification)
+        .join(Classification)
+        .where(*conditions)
+        .order_by(
+            Classification.risk_score.desc(),
+            Classification.impact_score.desc(),
+            Article.published_at.desc(),
+        )
+        .limit(top_limit)
+    ).all()
     highlights = []
-    for article, classification in selected[:top_limit]:
+    for article, classification in selected:
         if classification.risk_score >= 10:
             priority = "crítica"
         elif classification.risk_score >= 7 or classification.impact_score >= 8:
@@ -453,13 +478,14 @@ def recent_stats(
     return {
         "periodo_horas": hours,
         "termo": term,
-        "total": len(rows),
-        "por_veiculo": count("source"),
-        "por_editoria": count("section"),
-        "por_jornalista": count("journalist"),
+        "total": int(total),
+        "por_veiculo": grouped(Article.source),
+        "por_editoria": grouped(Article.section),
+        "por_jornalista": grouped(Article.journalist),
         "por_risco": risks,
         "principais": highlights,
     }
+
 
 def weekly_stats(db: Session, term: str | None = None) -> dict:
     return recent_stats(db, term)
@@ -482,6 +508,9 @@ def backfill_journalists(db: Session, limit: int = 50) -> dict:
         })
         if enriched.get("journalist"):
             article.journalist = enriched["journalist"]
+            article.searchable_text = searchable_text(
+                article.title, article.body, article.source, article.journalist
+            )
             updated += 1
     if updated:
         db.commit()

@@ -40,7 +40,7 @@
           <p>{{ pageDescription() }}</p>
         </div>
         <div class="header-actions">
-          <label *ngIf="usesSharedFilters()" class="period-select"><span>Período</span><select [(ngModel)]="days" (change)="load()"><option [ngValue]="1">24 horas</option><option [ngValue]="2">48 horas</option><option [ngValue]="7">7 dias</option><option [ngValue]="30">30 dias</option></select></label>
+          <label *ngIf="usesSharedFilters()" class="period-select"><span>Período</span><select [(ngModel)]="days" (change)="load(true)"><option [ngValue]="1">24 horas</option><option [ngValue]="2">48 horas</option><option [ngValue]="7">7 dias</option><option [ngValue]="30">30 dias</option></select></label>
           <button *ngIf="page() === 'overview' || page() === 'news'" class="utility-button" (click)="openReport()" [disabled]="loading()">PDF</button>
           <button *ngIf="usesSharedFilters()" class="refresh" (click)="load()" [disabled]="loading()">↻ Atualizar</button>
           <app-notification-center></app-notification-center>
@@ -233,8 +233,13 @@
 
         <ng-container *ngIf="page() === 'news'">
           <section class="panel articles">
-            <div class="panel-head"><div><p>CONTEÚDO COLETADO</p><h2>{{ visibleArticles().length }} notícias encontradas</h2></div><span>Recorte sincronizado</span></div>
+            <div class="panel-head"><div><p>CONTEÚDO COLETADO</p><h2>{{ articleTotal() }} notícias encontradas</h2></div><span>Página {{ articlePage() }} de {{ articleTotalPages() }}</span></div>
             <div class="table-wrap"><table><thead><tr><th>Notícia</th><th>Veículo</th><th>Editoria</th><th>Risco</th><th>Impacto</th><th>Publicação</th></tr></thead><tbody><tr *ngFor="let article of visibleArticles()"><td><a [href]="article.url" target="_blank" rel="noopener">{{ article.title }}</a><div class="tags"><span *ngFor="let word of article.keywords.slice(0, 3)">{{ word }}</span></div></td><td><strong>{{ article.source }}</strong><small *ngIf="article.journalist">{{ article.journalist }}</small></td><td>{{ toneLabel(article.section) }}</td><td><span class="risk-badge" [ngClass]="riskClass(article.risk)">{{ article.risk }}</span><small>{{ toneLabel(article.tone) }}</small></td><td><b>{{ article.impact | number:'1.1-1' }}</b></td><td>{{ date(article.publishedAt) }}</td></tr></tbody></table></div>
+            <nav class="article-pagination" *ngIf="articleTotalPages() > 1" aria-label="Paginação das notícias">
+              <button type="button" (click)="goToArticlePage(articlePage() - 1)" [disabled]="loading() || articlePage() === 1">← Anterior</button>
+              <span>{{ articlePage() }} / {{ articleTotalPages() }}</span>
+              <button type="button" (click)="goToArticlePage(articlePage() + 1)" [disabled]="loading() || articlePage() === articleTotalPages()">Próxima →</button>
+            </nav>
           </section>
         </ng-container>
 

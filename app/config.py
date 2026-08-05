@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     report_to: str = ""
     report_from: str = ""
+    dashboard_user: str = "equipe"
+    dashboard_password: str = ""
+    dashboard_owner_username: str = ""
+    dashboard_owner_email: str = ""
+    dashboard_additional_admin_usernames: str = ""
+    dashboard_public_url: str = "http://localhost:4200"
+    dashboard_session_days: int = 7
+    dashboard_cache_seconds: int = 60
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 @lru_cache
