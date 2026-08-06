@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import CurrentUser, require_user
 from app.classifier import normalize
-from app.dashboard_service import clear_dashboard_cache, filters, normalized_options, overview
+from app.dashboard_service import OverviewOptions, clear_dashboard_cache, filters, normalized_options, overview
 from app.database import get_db
 from app.models import (
     DashboardUser, EmailSchedule, McsAlert, UserKeyword, UserMcsAlertRead,
@@ -38,6 +38,11 @@ class ScheduleRequest(BaseModel):
     risk: int | None = None
     keywords: list[str] | None = None
     recipientEmail: str | None = None
+
+
+class WhatsappReportRequest(BaseModel):
+    risk: int | None = None
+    keywords: list[str] | None = None
 
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -172,6 +177,16 @@ def _json_list(value: str | None) -> list[str]:
         return result if isinstance(result, list) else []
     except (TypeError, json.JSONDecodeError):
         return []
+
+
+def _selected_user_keywords(db: Session, user_id: int, requested: list[str] | None) -> list[str]:
+    available = list(db.scalars(
+        select(UserKeyword.keyword).where(UserKeyword.user_id == user_id).order_by(UserKeyword.keyword)
+    ))
+    if not requested:
+        return available
+    requested_normalized = {normalize(term) for term in requested if term and term.strip()}
+    return [term for term in available if normalize(term) in requested_normalized]
 
 
 @router.get("/alerts")
@@ -312,6 +327,34 @@ def list_schedules(user: CurrentUser = Depends(require_user), db: Session = Depe
     return result
 
 
+@router.post("/whatsapp-report")
+def whatsapp_report(
+    body: WhatsappReportRequest,
+    user: CurrentUser = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    allowed = db.scalar(
+        select(DashboardUser.can_send_whatsapp).where(
+            DashboardUser.id == user.id,
+            DashboardUser.active.is_(True),
+        )
+    )
+    if not allowed:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Sua conta não possui permissão para compartilhar relatórios no WhatsApp")
+    if body.risk is not None and body.risk not in (0, 5, 10):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Selecione um risco válido")
+    selected = _selected_user_keywords(db, user.id, body.keywords)
+    if not selected:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Selecione ao menos uma palavra-chave")
+    return overview(db, user.id, OverviewOptions(
+        days=1,
+        keywords=tuple(selected),
+        risks=(body.risk,) if body.risk is not None else (),
+        page_size=12,
+        prioritize_articles=True,
+    ))
+
+
 @router.post("/email-schedules")
 def create_schedule(
     body: ScheduleRequest,
@@ -349,13 +392,7 @@ def create_schedule(
     ) or 0
     if pending >= 2:
         raise HTTPException(status.HTTP_409_CONFLICT, "Você já possui dois envios programados")
-    available = list(db.scalars(select(UserKeyword.keyword).where(UserKeyword.user_id == user.id)))
-    selected = available if not body.keywords else list(dict.fromkeys(
-        available_term
-        for term in body.keywords
-        for available_term in available
-        if term.strip().casefold() == available_term.casefold()
-    ))
+    selected = _selected_user_keywords(db, user.id, body.keywords)
     if not selected:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Selecione ao menos uma palavra-chave")
     schedule = EmailSchedule(

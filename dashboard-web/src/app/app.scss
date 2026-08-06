@@ -468,6 +468,14 @@ nav a.active { box-shadow: inset 2px 0 #d1a15e; }
 .schedule-email > small { margin-top: 6px; color: var(--muted); font-size: 8px; }
 .admin-account-actions .email-permission { border-color: #3f4e42; color: #a9c6b4; background: #1d2921; }
 .admin-account-actions .email-permission.enabled { border-color: #6a4b3e; color: #e6aaa0; background: #2c1e1b; }
+.admin-account-actions .whatsapp-permission { border-color: #365247; color: #a9d1bd; background: #182820; }
+.admin-account-actions .whatsapp-permission.enabled { border-color: #6a4b3e; color: #e6aaa0; background: #2c1e1b; }
+
+.whatsapp-panel { display: grid; grid-template-columns: minmax(220px, .65fr) minmax(0, 1.35fr); gap: 28px; margin-top: 14px; border-top: 3px solid #4d8c6c; }
+.whatsapp-panel form { display: grid; gap: 14px; }
+.whatsapp-risk { grid-template-columns: minmax(160px, 220px); }
+.whatsapp-terms { max-height: 145px; }
+.whatsapp-actions { justify-content: flex-start; flex-wrap: wrap; }
 
 .article-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; border-top: 1px solid var(--border); padding-top: 14px; }
 .article-pagination span { color: var(--muted); font-size: 10px; font-weight: 700; }
@@ -496,4 +504,5 @@ nav a.active { box-shadow: inset 2px 0 #d1a15e; }
   .source-list.extended > div > button { grid-column: 2 / -1; justify-self: start; min-height: 40px; }
   .admin-account-actions { flex-wrap: wrap; }
   .admin-account-actions button, .source-list.extended > div > button { min-height: 44px; }
+  .whatsapp-panel { grid-template-columns: 1fr; gap: 20px; }
 }

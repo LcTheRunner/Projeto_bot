@@ -11,7 +11,7 @@ MVP em Python para coletar notícias, encontrar temas monitorados, classificar r
 5. Abra o painel gerencial em `http://localhost:4200`.
 6. Inicie uma coleta em `POST /coletas` ou aguarde a rotina diária das 04h30.
 
-O relatório sai às 07h00 quando SMTP estiver preenchido. Também pode ser disparado por `POST /relatorios/enviar`. Para Instagram, informe conta profissional/token Meta e ative `instagram.enabled` em `config/sources.yaml`.
+Às 07h00, quando o SMTP estiver preenchido, o worker envia um boletim individual para cada conta ativa e com e-mail verificado. Cada boletim usa somente as palavras-chave cadastradas naquela conta; contas sem e-mail ou sem palavras-chave são ignoradas. A rodada reutiliza estatísticas de contas com o mesmo conjunto de termos e uma única conexão SMTP. O relatório global legado também pode ser disparado por `POST /relatorios/enviar`. Para Instagram, informe conta profissional/token Meta e ative `instagram.enabled` em `config/sources.yaml`.
 
 Consultas principais: `GET /noticias?risco=10` e `GET /estatisticas/semana?termo=corrupção com O.S.`.
 
@@ -75,6 +75,14 @@ recusa destinos externos enquanto essa permissão estiver bloqueada. O worker
 atualiza a coleta até 20 minutos antes do horário e envia um resumo editorial
 com no máximo seis notícias das últimas 24 horas que correspondam ao recorte.
 
+Uma conta autorizada também pode preparar, na página **Envios por e-mail**, um
+PDF das últimas 24 horas para compartilhamento manual pelo WhatsApp. O usuário
+escolhe risco e palavras-chave, gera o arquivo e confirma o compartilhamento;
+não há agendamento, bot do WhatsApp, token Meta ou envio em segundo plano. Em
+navegadores com compartilhamento de arquivos, o PDF segue pelo menu nativo. Nos
+demais, o painel baixa o arquivo e abre o WhatsApp para que ele seja anexado
+manualmente.
+
 ## Administração de contas
 
 A página `/admin` aparece somente para contas administrativas. Esconder o link
@@ -100,6 +108,10 @@ Na mesma página, somente a conta proprietária pode habilitar ou revogar a
 permissão de destino externo de cada usuário. Contas novas e existentes começam
 com essa permissão bloqueada. A revogação impede novos usos e marca como falhos
 os envios externos ainda pendentes.
+
+A permissão de compartilhamento manual pelo WhatsApp também começa bloqueada e
+só pode ser alterada por uma conta administrativa. Ela libera apenas a preparação do
+PDF e os controles de compartilhamento; nunca inicia envios automáticos.
 
 Depois de alterar essas variáveis, recrie o contêiner para que o novo ambiente
 seja carregado:

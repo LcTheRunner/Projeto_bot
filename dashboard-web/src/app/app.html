@@ -207,6 +207,7 @@
               <div class="bars"><div *ngFor="let point of dashboard.byKeyword"><div class="bar-label"><span>{{ point.label }}</span><b>{{ point.value }}</b></div><div class="bar-track"><i [style.width.%]="width(point, dashboard.byKeyword)"></i></div></div><p *ngIf="!dashboard.byKeyword.length" class="empty">Nenhuma palavra encontrada neste período.</p></div>
             </article>
           </section>
+
         </ng-container>
 
         <ng-container *ngIf="page() === 'sources'">
@@ -296,6 +297,31 @@
               </div>
             </article>
           </section>
+
+          <section class="panel whatsapp-panel" *ngIf="user()?.whatsappAllowed">
+            <div class="whatsapp-copy">
+              <div class="panel-head"><div><p>WHATSAPP MANUAL</p><h2>Compartilhar recorte em PDF</h2></div></div>
+              <p class="admin-helper">Escolha o conteúdo das últimas 24 horas e prepare o arquivo. Nada é enviado automaticamente: você confirma o compartilhamento e escolhe a conversa no WhatsApp.</p>
+            </div>
+            <form (ngSubmit)="prepareWhatsappReport()">
+              <div class="schedule-when whatsapp-risk"><label><span>Risco</span><select name="whatsappRisk" [(ngModel)]="whatsappRisk" (change)="onWhatsappRiskChange()"><option value="">Todos</option><option value="10">Risco 10</option><option value="5">Risco 5</option><option value="0">Risco 0</option></select></label></div>
+              <div class="schedule-terms-head">
+                <div><strong>Palavras-chave</strong><small>Sem seleção, o PDF considera todos os termos da sua conta.</small></div>
+                <label><input type="checkbox" [checked]="whatsappKeywords.size === filters().keywords.length && filters().keywords.length > 0" (change)="toggleAllWhatsappKeywords($any($event.target).checked)"> Todas</label>
+              </div>
+              <div class="schedule-terms whatsapp-terms">
+                <label *ngFor="let term of filters().keywords" [class.selected]="whatsappKeywordChecked(term)"><input type="checkbox" [checked]="whatsappKeywordChecked(term)" (change)="toggleWhatsappKeyword(term, $any($event.target).checked)"><span>{{ term }}</span></label>
+              </div>
+              <p class="report-error" *ngIf="whatsappError()">{{ whatsappError() }}</p>
+              <p class="keyword-success" *ngIf="whatsappMessage()">{{ whatsappMessage() }}</p>
+              <div class="report-modal-actions whatsapp-actions">
+                <button class="generate-report" type="submit" [disabled]="whatsappGenerating()">{{ whatsappGenerating() ? 'Preparando PDF…' : 'Preparar PDF' }}</button>
+                <button *ngIf="whatsappReady() && canShareWhatsappFile()" type="button" class="generate-report" (click)="shareWhatsappReport()">Compartilhar PDF</button>
+                <button *ngIf="whatsappReady()" type="button" class="cancel-report" (click)="downloadWhatsappReport()">Baixar PDF</button>
+                <button *ngIf="whatsappReady()" type="button" class="cancel-report" (click)="openWhatsapp()">Abrir WhatsApp</button>
+              </div>
+            </form>
+          </section>
         </ng-container>
       </ng-container>
 
@@ -348,6 +374,7 @@
                   </div>
                   <div class="admin-account-actions">
                     <button *ngIf="user()?.owner" type="button" class="email-permission" [class.enabled]="account.externalEmailAllowed" (click)="updateExternalEmailPermission(account)">{{ account.externalEmailAllowed ? 'Bloquear e-mail externo' : 'Permitir e-mail externo' }}</button>
+                    <button *ngIf="user()?.admin" type="button" class="whatsapp-permission" [class.enabled]="account.whatsappAllowed" (click)="updateWhatsappPermission(account)">{{ account.whatsappAllowed ? 'Bloquear WhatsApp' : 'Permitir WhatsApp' }}</button>
                     <button *ngIf="account.ownerCandidate && (!account.admin || activeAdminCount() > 1)" type="button" class="owner-action" (click)="transferOwnership(account)">Tornar admin único</button>
                     <span *ngIf="account.id === user()?.id">Sua conta</span>
                     <button *ngIf="account.id !== user()?.id" type="button" class="delete-account" (click)="deleteAccount(account)">Excluir</button>

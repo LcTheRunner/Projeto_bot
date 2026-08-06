@@ -215,7 +215,7 @@ describe('App', () => {
     const http = TestBed.inject(HttpTestingController);
     http.expectOne('/auth-api/me').flush({
       id: 2, username: 'autorizado', displayName: 'Autorizado', email: 'conta@example.com',
-      admin: false, externalEmailAllowed: true, owner: false
+      admin: false, externalEmailAllowed: true, whatsappAllowed: true, owner: false
     });
     http.expectOne('/dashboard-api/filters').flush({
       sources: [], sections: [], risks: [0, 5, 10], keywords: ['corrupção'], tones: [], municipalities: []
@@ -232,6 +232,7 @@ describe('App', () => {
     fixture.detectChanges();
 
     expect((fixture.nativeElement as HTMLElement).querySelector('.schedule-email')).toBeTruthy();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.whatsapp-panel')).toBeTruthy();
     expect((fixture.nativeElement as HTMLElement).querySelector('.context-filters')).toBeNull();
 
     fixture.componentInstance.scheduleDate = '2099-12-31';

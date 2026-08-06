@@ -25,8 +25,21 @@ export interface ReportContext {
 export class ReportPdfService {
   async generate(data: ReportOverview, context: ReportContext): Promise<void> {
     const doc = await this.build(data, context);
-    const stamp = new Date().toISOString().slice(0, 10);
-    doc.save(`resumo-executivo-midia-${stamp}.pdf`);
+    doc.save(this.fileName());
+  }
+
+  async createFile(data: ReportOverview, context: ReportContext): Promise<File> {
+    const doc = await this.build(data, context);
+    return new File([doc.output('blob')], this.fileName(), { type: 'application/pdf' });
+  }
+
+  download(file: File): void {
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.name;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   async build(data: ReportOverview, context: ReportContext): Promise<JsPDF> {
@@ -262,5 +275,10 @@ export class ReportPdfService {
 
   private shortDate(value: string): string {
     return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(value));
+  }
+
+  private fileName(): string {
+    const stamp = new Date().toISOString().slice(0, 10);
+    return `resumo-executivo-midia-${stamp}.pdf`;
   }
 }

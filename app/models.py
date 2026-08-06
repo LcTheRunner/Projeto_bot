@@ -77,6 +77,7 @@ class DashboardUser(Base):
     password_hash: Mapped[str] = mapped_column(String(100))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     can_send_external_email: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_send_whatsapp: Mapped[bool] = mapped_column(Boolean, default=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, server_default=func.now())
 

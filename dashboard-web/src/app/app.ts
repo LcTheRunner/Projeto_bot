@@ -21,13 +21,13 @@ interface Overview {
 interface Filters { sources: string[]; sections: string[]; risks: number[]; keywords: string[]; tones: string[]; municipalities: string[]; }
 interface CurrentUser {
   id: number; username: string; displayName: string; email?: string; admin: boolean;
-  externalEmailAllowed?: boolean; owner?: boolean;
+  externalEmailAllowed?: boolean; whatsappAllowed?: boolean; owner?: boolean;
 }
 interface UserKeyword { id: number; keyword: string; }
 interface ManagedUser {
   id: number; username: string; displayName: string; email?: string;
   emailVerified: boolean; admin: boolean; active: boolean; createdAt: string;
-  ownerCandidate: boolean; externalEmailAllowed: boolean;
+  ownerCandidate: boolean; externalEmailAllowed: boolean; whatsappAllowed: boolean;
 }
 interface EmailSchedule {
   id: number; scheduledAt: string; risk: number | null; keywords: string[];
@@ -77,6 +77,10 @@ export class App implements OnInit, OnDestroy {
   readonly emailSchedules = signal<EmailSchedule[]>([]);
   readonly scheduleError = signal('');
   readonly scheduleMessage = signal('');
+  readonly whatsappGenerating = signal(false);
+  readonly whatsappReady = signal(false);
+  readonly whatsappError = signal('');
+  readonly whatsappMessage = signal('');
   private readonly popStateHandler = () => this.activatePage(this.pageFromPath(), false);
   private filterReloadTimer?: number;
   private loadSequence = 0;
@@ -109,6 +113,9 @@ export class App implements OnInit, OnDestroy {
   scheduleRisk = '';
   scheduleKeywords = new Set<string>();
   scheduleRecipientEmail = '';
+  whatsappRisk = '';
+  whatsappKeywords = new Set<string>();
+  private whatsappReportFile?: File;
 
   ngOnInit(): void {
     this.activatePage(this.pageFromPath(), false);
@@ -643,6 +650,101 @@ export class App implements OnInit, OnDestroy {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
 
+  toggleWhatsappKeyword(keyword: string, checked: boolean): void {
+    if (checked) this.whatsappKeywords.add(keyword); else this.whatsappKeywords.delete(keyword);
+    this.invalidateWhatsappReport();
+  }
+
+  whatsappKeywordChecked(keyword: string): boolean { return this.whatsappKeywords.has(keyword); }
+
+  toggleAllWhatsappKeywords(checked: boolean): void {
+    this.whatsappKeywords.clear();
+    if (checked) this.filters().keywords.forEach(keyword => this.whatsappKeywords.add(keyword));
+    this.invalidateWhatsappReport();
+  }
+
+  onWhatsappRiskChange(): void { this.invalidateWhatsappReport(); }
+
+  prepareWhatsappReport(): void {
+    this.whatsappGenerating.set(true);
+    this.whatsappError.set('');
+    this.whatsappMessage.set('');
+    this.whatsappReady.set(false);
+    this.whatsappReportFile = undefined;
+    const selected = [...this.whatsappKeywords];
+    this.http.post<ReportOverview>('/dashboard-api/whatsapp-report', {
+      risk: this.whatsappRisk === '' ? null : Number(this.whatsappRisk),
+      keywords: selected
+    }).subscribe({
+      next: async value => {
+        try {
+          const terms = selected.length ? selected : this.filters().keywords;
+          this.whatsappReportFile = await this.reportPdf.createFile(value, {
+            periodLabel: 'Últimas 24 horas',
+            filters: [
+              this.whatsappRisk === '' ? 'Todos os riscos' : `Risco: ${this.whatsappRisk}`,
+              `Palavras-chave: ${terms.join(', ')}`
+            ],
+            dashboardUrl: `${window.location.origin}/noticias`
+          });
+          this.whatsappReady.set(true);
+          this.whatsappMessage.set('PDF pronto. Agora escolha como deseja compartilhá-lo.');
+        } catch {
+          this.whatsappError.set('Não foi possível montar o PDF. Tente novamente.');
+        } finally {
+          this.whatsappGenerating.set(false);
+        }
+      },
+      error: error => {
+        this.whatsappError.set(this.authError(error, 'Não foi possível preparar o relatório.'));
+        this.whatsappGenerating.set(false);
+      }
+    });
+  }
+
+  canShareWhatsappFile(): boolean {
+    if (!this.whatsappReportFile || typeof navigator.share !== 'function') return false;
+    return typeof navigator.canShare !== 'function' || navigator.canShare({ files: [this.whatsappReportFile] });
+  }
+
+  async shareWhatsappReport(): Promise<void> {
+    if (!this.whatsappReportFile || !this.canShareWhatsappFile()) {
+      this.whatsappError.set('Este navegador não compartilha arquivos diretamente. Baixe o PDF e abra o WhatsApp.');
+      return;
+    }
+    this.whatsappError.set('');
+    try {
+      await navigator.share({
+        files: [this.whatsappReportFile],
+        title: 'Radar MCS | resumo de notícias',
+        text: 'Segue o resumo de impacto midiático selecionado no Radar MCS.'
+      });
+      this.whatsappMessage.set('Compartilhamento concluído pelo aplicativo escolhido.');
+    } catch (error) {
+      if ((error as DOMException)?.name !== 'AbortError') {
+        this.whatsappError.set('Não foi possível abrir o compartilhamento. Baixe o PDF e tente novamente.');
+      }
+    }
+  }
+
+  downloadWhatsappReport(): void {
+    if (!this.whatsappReportFile) return;
+    this.reportPdf.download(this.whatsappReportFile);
+    this.whatsappMessage.set('PDF baixado. Abra o WhatsApp e anexe esse arquivo à conversa.');
+  }
+
+  openWhatsapp(): void {
+    const text = encodeURIComponent('Segue o resumo de impacto midiático do Radar MCS. Anexarei o PDF nesta conversa.');
+    window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
+  }
+
+  private invalidateWhatsappReport(): void {
+    this.whatsappReportFile = undefined;
+    this.whatsappReady.set(false);
+    this.whatsappError.set('');
+    this.whatsappMessage.set('');
+  }
+
   createAccount(): void {
     this.accountError.set('');
     this.accountMessage.set('');
@@ -721,6 +823,24 @@ export class App implements OnInit, OnDestroy {
         this.loadAccounts();
       },
       error: error => this.accountError.set(this.authError(error, 'Não foi possível alterar a permissão de envio.'))
+    });
+  }
+
+  updateWhatsappPermission(account: ManagedUser): void {
+    this.accountError.set('');
+    this.accountMessage.set('');
+    const enabled = !account.whatsappAllowed;
+    this.http.put(`/auth-api/users/${account.id}/whatsapp`, { enabled }).subscribe({
+      next: () => {
+        if (account.id === this.user()?.id) {
+          this.user.update(current => current ? { ...current, whatsappAllowed: enabled } : current);
+        }
+        this.accountMessage.set(enabled
+          ? `${account.username} agora pode preparar PDFs para o WhatsApp.`
+          : `Compartilhamento por WhatsApp bloqueado para ${account.username}.`);
+        this.loadAccounts();
+      },
+      error: error => this.accountError.set(this.authError(error, 'Não foi possível alterar a permissão do WhatsApp.'))
     });
   }
 

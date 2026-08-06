@@ -1,11 +1,15 @@
 import smtplib
 import re
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from html import escape
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
+
 from app.config import settings
+from app.models import DashboardUser, UserKeyword
 from app.services import recent_stats
 
 LOCAL_TZ = ZoneInfo("America/Sao_Paulo")
@@ -79,8 +83,9 @@ def render_report(
     risk: int | None = None,
     recipient_name: str | None = None,
     hours: int = 72,
+    stats: dict | None = None,
 ) -> str:
-    stats = report_data(db, terms, risk, hours)
+    stats = stats if stats is not None else report_data(db, terms, risk, hours)
     stories = "".join(_story(item, index) for index, item in enumerate(stats["principais"], 1))
     if not stories:
         stories = """
@@ -128,8 +133,9 @@ def render_text_report(
     risk: int | None = None,
     recipient_name: str | None = None,
     hours: int = 72,
+    stats: dict | None = None,
 ) -> str:
-    stats = report_data(db, terms, risk, hours)
+    stats = stats if stats is not None else report_data(db, terms, risk, hours)
     lines = [
         "CENTRAL DE MONITORAMENTO DO MCS",
         f"{recipient_name + ', ' if recipient_name else ''}seu recorte programado está pronto.",
@@ -149,13 +155,38 @@ def render_text_report(
     return "\n".join(lines)
 
 
-def _send(message: EmailMessage, recipients: list[str]) -> None:
+@contextmanager
+def _smtp_session():
     cfg = settings()
-    with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port) as smtp:
+    with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=20) as smtp:
         smtp.starttls()
         if cfg.smtp_user:
             smtp.login(cfg.smtp_user, cfg.smtp_password)
+        yield smtp
+
+
+def _send(message: EmailMessage, recipients: list[str]) -> None:
+    with _smtp_session() as smtp:
         smtp.send_message(message, to_addrs=recipients)
+
+
+def _report_message(
+    db,
+    recipients: list[str],
+    terms: list[str] | None,
+    risk: int | None,
+    recipient_name: str | None,
+    hours: int,
+    stats: dict | None = None,
+) -> EmailMessage:
+    data = stats if stats is not None else report_data(db, terms, risk, hours)
+    message = EmailMessage()
+    message["Subject"] = "Radar MCS | seu resumo de notícias"
+    message["From"] = settings().report_from
+    message["To"] = ", ".join(recipients)
+    message.set_content(render_text_report(db, terms, risk, recipient_name, hours, data))
+    message.add_alternative(render_report(db, terms, risk, recipient_name, hours, data), subtype="html")
+    return message
 
 
 def send_report(
@@ -170,10 +201,116 @@ def send_report(
     recipients = recipients or parse_recipients(cfg.report_to)
     if not all([cfg.smtp_host, recipients, cfg.report_from]):
         return {"enviado": False, "motivo": "SMTP ou destinatário não configurado"}
-    message = EmailMessage()
-    message["Subject"] = "Radar MCS | seu resumo de notícias"
-    message["From"], message["To"] = cfg.report_from, ", ".join(recipients)
-    message.set_content(render_text_report(db, terms, risk, recipient_name, hours))
-    message.add_alternative(render_report(db, terms, risk, recipient_name, hours), subtype="html")
+    message = _report_message(db, recipients, terms, risk, recipient_name, hours)
     _send(message, recipients)
     return {"enviado": True, "destinatarios": len(recipients), "noticias_no_email": EMAIL_NEWS_LIMIT}
+
+
+def daily_report_accounts(db) -> list[dict]:
+    """Carrega contas e palavras-chave em uma consulta, sem uma busca por usuário."""
+    rows = db.execute(
+        select(
+            DashboardUser.id,
+            DashboardUser.display_name,
+            DashboardUser.email,
+            UserKeyword.keyword,
+        )
+        .outerjoin(UserKeyword, UserKeyword.user_id == DashboardUser.id)
+        .where(
+            DashboardUser.active.is_(True),
+            DashboardUser.email_verified.is_(True),
+            DashboardUser.email.is_not(None),
+        )
+        .order_by(DashboardUser.id, UserKeyword.keyword)
+    ).all()
+    accounts: dict[int, dict] = {}
+    for row in rows:
+        account = accounts.setdefault(row.id, {
+            "id": row.id,
+            "display_name": row.display_name,
+            "email": (row.email or "").strip().lower(),
+            "keywords": [],
+        })
+        if row.keyword:
+            account["keywords"].append(row.keyword)
+    return list(accounts.values())
+
+
+def send_daily_user_reports(db, hours: int = 72) -> dict:
+    """Envia um boletim individual por conta usando uma única sessão SMTP."""
+    cfg = settings()
+    accounts = daily_report_accounts(db)
+    eligible = [account for account in accounts if account["email"] and account["keywords"]]
+    skipped = len(accounts) - len(eligible)
+    if not cfg.smtp_host or not cfg.report_from:
+        return {
+            "enviado": False,
+            "contas_elegiveis": len(eligible),
+            "enviados": 0,
+            "ignorados_sem_palavras": skipped,
+            "falhas": len(eligible),
+            "motivo": "SMTP não configurado",
+        }
+    if not eligible:
+        return {
+            "enviado": False,
+            "contas_elegiveis": 0,
+            "enviados": 0,
+            "ignorados_sem_palavras": skipped,
+            "falhas": 0,
+            "motivo": "Nenhuma conta verificada com e-mail e palavras-chave",
+        }
+
+    stats_cache: dict[tuple[str, ...], dict] = {}
+    prepared: list[tuple[list[str], EmailMessage]] = []
+    preparation_failures = 0
+    for account in eligible:
+        terms = account["keywords"]
+        cache_key = tuple(term.casefold() for term in terms)
+        try:
+            data = stats_cache.get(cache_key)
+            if data is None:
+                data = report_data(db, terms=terms, hours=hours)
+                stats_cache[cache_key] = data
+            recipients = [account["email"]]
+            prepared.append((recipients, _report_message(
+                db,
+                recipients,
+                terms,
+                None,
+                account["display_name"],
+                hours,
+                data,
+            )))
+        except Exception:
+            preparation_failures += 1
+
+    sent = 0
+    delivery_failures = 0
+    try:
+        with _smtp_session() as smtp:
+            for recipients, message in prepared:
+                try:
+                    smtp.send_message(message, to_addrs=recipients)
+                    sent += 1
+                except (OSError, smtplib.SMTPException):
+                    delivery_failures += 1
+    except (OSError, smtplib.SMTPException) as exc:
+        return {
+            "enviado": False,
+            "contas_elegiveis": len(eligible),
+            "enviados": 0,
+            "ignorados_sem_palavras": skipped,
+            "falhas": len(prepared) + preparation_failures,
+            "motivo": f"Falha na conexão SMTP: {type(exc).__name__}",
+        }
+
+    failures = preparation_failures + delivery_failures
+    return {
+        "enviado": sent > 0,
+        "contas_elegiveis": len(eligible),
+        "enviados": sent,
+        "ignorados_sem_palavras": skipped,
+        "falhas": failures,
+        "consultas_de_conteudo": len(stats_cache),
+    }

@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from app.database import Base, engine, SessionLocal
 from app.services import collect, collect_mcs_alerts
-from app.reports import send_report
+from app.reports import send_daily_user_reports, send_report
 
 logging.basicConfig(level=logging.INFO)
 LOCAL_TZ = ZoneInfo("America/Sao_Paulo")
@@ -16,7 +16,7 @@ def job():
     with SessionLocal() as db: logging.info("Coleta concluida: %s", collect(db))
 
 def report_job():
-    with SessionLocal() as db: logging.info("Relatório: %s", send_report(db))
+    with SessionLocal() as db: logging.info("Relatórios individuais: %s", send_daily_user_reports(db))
 
 def institutional_alert_job():
     with SessionLocal() as db: logging.info("Alertas institucionais: %s", collect_mcs_alerts(db))

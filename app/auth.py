@@ -37,6 +37,7 @@ class CurrentUser:
     email: str | None
     admin: bool
     external_email_allowed: bool
+    whatsapp_allowed: bool
 
 
 class LoginRequest(BaseModel):
@@ -105,6 +106,7 @@ def _user_from_row(user: DashboardUser) -> CurrentUser:
         email=user.email,
         admin=bool(user.is_admin),
         external_email_allowed=bool(user.can_send_external_email),
+        whatsapp_allowed=bool(user.can_send_whatsapp),
     )
 
 
@@ -115,6 +117,7 @@ def user_map(user: CurrentUser) -> dict:
         "displayName": user.display_name,
         "admin": user.admin,
         "externalEmailAllowed": user.external_email_allowed,
+        "whatsappAllowed": user.whatsapp_allowed,
         "owner": is_configured_owner(user.username, user.email),
     }
     if user.email is not None:
@@ -470,6 +473,7 @@ def list_users(user: CurrentUser = Depends(require_user), db: Session = Depends(
             "emailVerified": bool(row.email_verified),
             "admin": bool(row.is_admin),
             "externalEmailAllowed": bool(row.can_send_external_email),
+            "whatsappAllowed": bool(row.can_send_whatsapp),
             "active": bool(row.active),
             "createdAt": row.created_at,
             "ownerCandidate": is_configured_owner(row.username, row.email),
@@ -537,6 +541,24 @@ def external_email_permission(
             )
             .values(status="FAILED", last_error="Permissão para destino externo revogada")
         )
+    db.commit()
+    return {"updated": True}
+
+
+@router.put("/users/{user_id}/whatsapp")
+def whatsapp_permission(
+    user_id: int,
+    body: PermissionRequest,
+    user: CurrentUser = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    _require_admin(db, user, lock=True)
+    target = db.scalar(
+        select(DashboardUser).where(DashboardUser.id == user_id, DashboardUser.active.is_(True)).with_for_update()
+    )
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conta não encontrada ou inativa")
+    target.can_send_whatsapp = body.enabled
     db.commit()
     return {"updated": True}
 

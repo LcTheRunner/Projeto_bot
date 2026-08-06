@@ -55,6 +55,7 @@ class OverviewOptions:
     include_all: bool = False
     page: int = 1
     page_size: int = 100
+    prioritize_articles: bool = False
 
 
 def clear_dashboard_cache() -> None:
@@ -221,7 +222,12 @@ def overview(db: Session, user_id: int, options: OverviewOptions) -> dict:
     ).mappings().one()
     total = int(kpi["articles"] or 0)
 
-    articles_statement = select(base).order_by(base.c.published_at.desc(), base.c.id.desc())
+    if options.prioritize_articles:
+        articles_statement = select(base).order_by(
+            base.c.risk.desc(), base.c.impact.desc(), base.c.published_at.desc(), base.c.id.desc()
+        )
+    else:
+        articles_statement = select(base).order_by(base.c.published_at.desc(), base.c.id.desc())
     if not options.include_all:
         articles_statement = articles_statement.offset((options.page - 1) * options.page_size).limit(options.page_size)
     rows = db.execute(articles_statement).mappings().all()
@@ -252,7 +258,7 @@ def overview(db: Session, user_id: int, options: OverviewOptions) -> dict:
         "byTone": _ranked(db, base, base.c.tone, transform=_label),
         "bySource": _ranked(db, base, base.c.source),
         "bySection": _ranked(db, base, base.c.section, transform=_label),
-        "byKeyword": _keyword_counts(db, base, user_keywords),
+        "byKeyword": _keyword_counts(db, base, list(options.keywords) or user_keywords),
         "timeline": _timeline(db, base, since),
         "articles": articles,
         "pagination": {

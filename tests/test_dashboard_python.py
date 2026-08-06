@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -35,6 +35,7 @@ def seed(engine):
             email_verified=True,
             password_hash=hash_password("123456"),
             is_admin=True,
+            can_send_whatsapp=True,
         )
         db.add(user)
         db.flush()
@@ -126,6 +127,7 @@ def test_http_contract_login_dashboard_and_keywords():
     login = client.post("/api/auth/login", json={"username": "admin", "password": "123456"})
     assert login.status_code == 200
     assert login.json()["displayName"] == "Admin"
+    assert login.json()["whatsappAllowed"] is True
     assert login.cookies.get("mcs_session")
 
     response = client.get("/api/dashboard/overview", params={"risk": 10, "pageSize": 1})
@@ -155,6 +157,31 @@ def test_http_contract_login_dashboard_and_keywords():
     assert schedules[0]["risk"] == 10
     assert schedules[0]["status"] == "PENDING"
     assert client.delete(f"/api/dashboard/email-schedules/{schedule.json()['id']}").status_code == 200
+
+    whatsapp = client.post("/api/dashboard/whatsapp-report", json={
+        "risk": 10,
+        "keywords": ["corrupção"],
+    })
+    assert whatsapp.status_code == 200
+    assert whatsapp.json()["kpis"]["articles"] == 1
+    assert whatsapp.json()["articles"][0]["risk"] == 10
+    assert client.post("/api/dashboard/whatsapp-report", json={
+        "risk": None,
+        "keywords": ["palavra não cadastrada"],
+    }).status_code == 400
+    with Session(engine) as db:
+        account = db.scalar(select(DashboardUser).where(DashboardUser.username == "admin"))
+        account.can_send_whatsapp = False
+        db.commit()
+    assert client.post("/api/dashboard/whatsapp-report", json={
+        "risk": 10,
+        "keywords": ["corrupção"],
+    }).status_code == 403
+    assert client.put(f"/api/auth/users/{login.json()['id']}/whatsapp", json={"enabled": True}).status_code == 200
+    assert client.post("/api/dashboard/whatsapp-report", json={
+        "risk": 10,
+        "keywords": ["corrupção"],
+    }).status_code == 200
 
 
 def test_alert_contract_and_read_state():

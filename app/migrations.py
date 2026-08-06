@@ -43,6 +43,8 @@ def _add_legacy_columns(engine: Engine) -> None:
             statements.append("ALTER TABLE dashboard_users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT TRUE")
         if "can_send_external_email" not in user_columns:
             statements.append("ALTER TABLE dashboard_users ADD COLUMN can_send_external_email BOOLEAN NOT NULL DEFAULT FALSE")
+        if "can_send_whatsapp" not in user_columns:
+            statements.append("ALTER TABLE dashboard_users ADD COLUMN can_send_whatsapp BOOLEAN NOT NULL DEFAULT FALSE")
     if "email_schedules" in tables:
         schedule_columns = {column["name"] for column in inspector.get_columns("email_schedules")}
         if "recipient_email" not in schedule_columns:
