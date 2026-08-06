@@ -688,7 +688,9 @@ export class App implements OnInit, OnDestroy {
             dashboardUrl: `${window.location.origin}/noticias`
           });
           this.whatsappReady.set(true);
-          this.whatsappMessage.set('PDF pronto. Agora escolha como deseja compartilhá-lo.');
+          this.whatsappMessage.set(this.canShareWhatsappFile()
+            ? 'PDF pronto. Toque em “Enviar PDF” e escolha o WhatsApp.'
+            : 'PDF pronto. Baixe o documento e anexe-o no WhatsApp Web.');
         } catch {
           this.whatsappError.set('Não foi possível montar o PDF. Tente novamente.');
         } finally {
@@ -716,10 +718,9 @@ export class App implements OnInit, OnDestroy {
     try {
       await navigator.share({
         files: [this.whatsappReportFile],
-        title: 'Radar MCS | resumo de notícias',
-        text: 'Segue o resumo de impacto midiático selecionado no Radar MCS.'
+        title: 'Panorama de impacto midiático'
       });
-      this.whatsappMessage.set('Compartilhamento concluído pelo aplicativo escolhido.');
+      this.whatsappMessage.set('O PDF foi entregue ao aplicativo escolhido para você concluir o envio.');
     } catch (error) {
       if ((error as DOMException)?.name !== 'AbortError') {
         this.whatsappError.set('Não foi possível abrir o compartilhamento. Baixe o PDF e tente novamente.');
@@ -730,12 +731,11 @@ export class App implements OnInit, OnDestroy {
   downloadWhatsappReport(): void {
     if (!this.whatsappReportFile) return;
     this.reportPdf.download(this.whatsappReportFile);
-    this.whatsappMessage.set('PDF baixado. Abra o WhatsApp e anexe esse arquivo à conversa.');
+    this.whatsappMessage.set('PDF baixado. Agora abra o WhatsApp Web e anexe o arquivo à conversa.');
   }
 
-  openWhatsapp(): void {
-    const text = encodeURIComponent('Segue o resumo de impacto midiático do Radar MCS. Anexarei o PDF nesta conversa.');
-    window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
+  openWhatsappWeb(): void {
+    window.open('https://web.whatsapp.com/', '_blank', 'noopener,noreferrer');
   }
 
   private invalidateWhatsappReport(): void {

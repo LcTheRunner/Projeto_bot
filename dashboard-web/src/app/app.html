@@ -300,8 +300,10 @@
 
           <section class="panel whatsapp-panel" *ngIf="user()?.whatsappAllowed">
             <div class="whatsapp-copy">
-              <div class="panel-head"><div><p>WHATSAPP MANUAL</p><h2>Compartilhar recorte em PDF</h2></div></div>
-              <p class="admin-helper">Escolha o conteúdo das últimas 24 horas e prepare o arquivo. Nada é enviado automaticamente: você confirma o compartilhamento e escolhe a conversa no WhatsApp.</p>
+              <div class="whatsapp-mark" aria-hidden="true"><span>↗</span></div>
+              <div class="panel-head"><div><p>ENVIO DE DOCUMENTO</p><h2>Relatório para WhatsApp</h2></div></div>
+              <p class="admin-helper">Monte o recorte das últimas 24 horas. No celular, o PDF segue como anexo pelo compartilhamento do aparelho; você escolhe a conversa e confirma o envio.</p>
+              <div class="whatsapp-flow"><span>1</span><p><strong>Prepare</strong><small>Escolha risco e assuntos.</small></p><i></i><span>2</span><p><strong>Compartilhe</strong><small>Selecione o WhatsApp e a conversa.</small></p></div>
             </div>
             <form (ngSubmit)="prepareWhatsappReport()">
               <div class="schedule-when whatsapp-risk"><label><span>Risco</span><select name="whatsappRisk" [(ngModel)]="whatsappRisk" (change)="onWhatsappRiskChange()"><option value="">Todos</option><option value="10">Risco 10</option><option value="5">Risco 5</option><option value="0">Risco 0</option></select></label></div>
@@ -316,10 +318,14 @@
               <p class="keyword-success" *ngIf="whatsappMessage()">{{ whatsappMessage() }}</p>
               <div class="report-modal-actions whatsapp-actions">
                 <button class="generate-report" type="submit" [disabled]="whatsappGenerating()">{{ whatsappGenerating() ? 'Preparando PDF…' : 'Preparar PDF' }}</button>
-                <button *ngIf="whatsappReady() && canShareWhatsappFile()" type="button" class="generate-report" (click)="shareWhatsappReport()">Compartilhar PDF</button>
-                <button *ngIf="whatsappReady()" type="button" class="cancel-report" (click)="downloadWhatsappReport()">Baixar PDF</button>
-                <button *ngIf="whatsappReady()" type="button" class="cancel-report" (click)="openWhatsapp()">Abrir WhatsApp</button>
+                <button *ngIf="whatsappReady() && canShareWhatsappFile()" type="button" class="generate-report whatsapp-send" (click)="shareWhatsappReport()"><span>↗</span> Enviar PDF pelo WhatsApp</button>
+                <ng-container *ngIf="whatsappReady() && !canShareWhatsappFile()">
+                  <button type="button" class="generate-report" (click)="downloadWhatsappReport()">1. Baixar PDF</button>
+                  <button type="button" class="cancel-report" (click)="openWhatsappWeb()">2. Abrir WhatsApp Web</button>
+                </ng-container>
+                <button *ngIf="whatsappReady() && canShareWhatsappFile()" type="button" class="cancel-report" (click)="downloadWhatsappReport()">Baixar uma cópia</button>
               </div>
+              <p class="whatsapp-browser-note" *ngIf="whatsappReady() && !canShareWhatsappFile()"><strong>Por que são dois passos?</strong> Por segurança, navegadores de computador não permitem anexar automaticamente um arquivo local ao WhatsApp Web.</p>
             </form>
           </section>
         </ng-container>

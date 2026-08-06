@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { vi } from 'vitest';
 import { App } from './app';
 import { ReportPdfService } from './report-pdf.service';
 
@@ -283,5 +284,32 @@ describe('App', () => {
     });
     expect(doc.getNumberOfPages()).toBeLessThanOrEqual(2);
     expect(doc.getNumberOfPages()).toBe(2);
+  });
+
+  it('compartilha o arquivo PDF sem substituir o anexo por uma mensagem', async () => {
+    const fixture = TestBed.createComponent(App);
+    const component = fixture.componentInstance;
+    const file = new File(['pdf'], 'panorama-midiatico.pdf', { type: 'application/pdf' });
+    const share = vi.fn().mockResolvedValue(undefined);
+    const originalShare = Object.getOwnPropertyDescriptor(navigator, 'share');
+    const originalCanShare = Object.getOwnPropertyDescriptor(navigator, 'canShare');
+    Object.defineProperty(navigator, 'share', { configurable: true, value: share });
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
+    (component as unknown as { whatsappReportFile: File }).whatsappReportFile = file;
+
+    try {
+      await component.shareWhatsappReport();
+      expect(share).toHaveBeenCalledWith({
+        files: [file],
+        title: 'Panorama de impacto midiático'
+      });
+      expect(share.mock.calls[0][0]).not.toHaveProperty('text');
+    } finally {
+      if (originalShare) Object.defineProperty(navigator, 'share', originalShare);
+      else Reflect.deleteProperty(navigator, 'share');
+      if (originalCanShare) Object.defineProperty(navigator, 'canShare', originalCanShare);
+      else Reflect.deleteProperty(navigator, 'canShare');
+      fixture.destroy();
+    }
   });
 });
